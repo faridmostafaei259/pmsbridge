@@ -32,7 +32,7 @@ address.
 | `BACKUP_DIR` | path | `<DATA_DIR>/backups` | no | The folder for automatic backups taken before a database upgrade. |
 | `PRE_MIGRATION_BACKUPS_KEEP` | whole number | `5` | no | How many automatic pre-upgrade backups to keep. Older ones are deleted. |
 | `LOG_LEVEL` | one of `DEBUG`, `INFO`, `WARNING`, `ERROR`, `CRITICAL` | `INFO` | no | How much detail goes to the logs. Logs never contain passwords, tokens or guest details. |
-| `ENCRYPTION_KEYS` | secret text | none (development: optional) | yes | The keys that protect stored PMS credentials and tokens: comma-separated entries of the form `<id>:<key>`, where the key is 32 random bytes in base64. The first entry encrypts new data; later entries are old keys kept only to read older data. If you lose these keys, the stored credentials cannot be recovered, so back them up. To change keys, run `pmsbridge rotate-keys`. |
+| `ENCRYPTION_KEYS` | secret text | none (development: optional) | yes | The keys that protect stored PMS credentials and tokens: comma-separated entries of the form `<id>:<key>`, where the key is 32 random bytes in base64. The first entry encrypts new data; later entries are old keys kept only to read older data. If you lose these keys, the stored credentials cannot be recovered, so back them up. Key rotation commands arrive with the `pmsbridge rotate-keys` host command in a later release; until then keep the single key. |
 
 ## Your encryption keys
 
@@ -52,15 +52,26 @@ one line to `deploy/.env`):
 Then save that line in a password manager. `k1` is just a short name for the key (letters and digits
 only). The `umask` makes the file readable only by you.
 
-To replace the keys, run `pmsbridge rotate-keys`. It adds a new key at the front, re-encrypts
-everything stored, and only then lets you remove the old key. Back up the new `.env` afterwards.
+Commands to replace the key (add a new one, re-encrypt everything stored, then retire the old one)
+arrive in a later release, together with the `pmsbridge rotate-keys` host command. Until then, keep
+the single key you created. Before any PMS credentials are stored there is nothing to re-encrypt, so
+there is nothing to lose yet.
 
-Keep each retired key line for as long as you keep backups made before the rotation. To restore such
-a backup, first add the retired key to `ENCRYPTION_KEYS`: copy only the part after
-`ENCRYPTION_KEYS=` (the `<name>:<key>` part) and put it after the active key, separated by a comma.
+Keep each retired key line for as long as you keep backups made before a rotation. To restore a
+backup made under an older key, edit the existing `ENCRYPTION_KEYS` line in `deploy/.env` so that it
+lists the active key first and the retired entry after it, separated by a comma. Copy the retired
+entry's `<name>:<key>` unchanged: the name is how the application finds the key that decrypts each
+stored value. Never add a second `ENCRYPTION_KEYS` line: only one of them is used.
 
 ```
 ENCRYPTION_KEYS=k2:<new key>,k1:<old key>
+```
+
+When rotation is available, a new key is made the same way as the first one, with a new name; it is
+just 32 random bytes in base64:
+
+```
+openssl rand -base64 32
 ```
 
 ## Stack settings
