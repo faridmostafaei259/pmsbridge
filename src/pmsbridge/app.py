@@ -1,7 +1,7 @@
 """Application factory for the pmsbridge web service.
 
 `create_app` builds the FastAPI application, adds the liveness and readiness endpoints, installs the
-security-header middleware and registers the feature modules that exist.
+security-header and request-size-limit middleware and registers the feature modules that exist.
 
 Features are registered by discovery. Each feature module in `FEATURE_MODULES` may define
 `register(app: FastAPI) -> None`. A module that does not exist yet is skipped. Any other import
@@ -54,10 +54,91 @@ SECURITY_HEADERS: tuple[tuple[str, str], ...] = (
     ("Cache-Control", "no-store"),
 )
 
+# Largest request body the application accepts. Caddy caps bodies at 2 MB (2,000,000 bytes), a
+# little below this, so requests through Caddy are always stopped there first. The application
+# enforces its own cap because traffic from the Docker host can reach it without Caddy.
+MAX_REQUEST_BODY_BYTES = 2 * 1024 * 1024
+
+REQUEST_TOO_LARGE_BODY = {
+    "error": "request_too_large",
+    "message": "The request body is too large. The limit is 2 MiB.",
+}
+
 INTERNAL_ERROR_BODY = {
     "error": "internal_error",
     "message": "Something went wrong on the server. The operator can find details in the logs.",
 }
+
+
+class _RequestTooLarge(BaseException):
+    """Raised inside the request body reader when a streamed body goes over the limit.
+
+    It derives from `BaseException` on purpose: a route or framework layer that catches `Exception`
+    around body parsing (FastAPI turns such errors into a 400) must not swallow it.
+    """
+
+
+class RequestSizeLimitMiddleware:
+    """Rejects request bodies over `max_bytes` with 413, without buffering them.
+
+    A declared `Content-Length` over the limit is rejected before the application runs. A body
+    without a usable `Content-Length` (chunked) is counted as it is read, and reading stops with a
+    413 as soon as the count goes over the limit. Chunks are passed on as they arrive.
+    """
+
+    def __init__(self, app: ASGIApp, max_bytes: int = MAX_REQUEST_BODY_BYTES) -> None:
+        self.app = app
+        self.max_bytes = max_bytes
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+
+        declared = MutableHeaders(scope=scope).get("content-length", "").strip()
+        if declared.isdecimal() and int(declared) > self.max_bytes:
+            await self._reject(scope, receive, send)
+            return
+
+        received = 0
+        responded = False
+
+        async def counting_receive() -> Message:
+            nonlocal received
+            message = await receive()
+            if message["type"] == "http.request":
+                received += len(message.get("body", b""))
+                if received > self.max_bytes:
+                    raise _RequestTooLarge
+            return message
+
+        async def tracking_send(message: Message) -> None:
+            nonlocal responded
+            if message["type"] == "http.response.start":
+                responded = True
+            await send(message)
+
+        try:
+            await self.app(scope, counting_receive, tracking_send)
+        except _RequestTooLarge:
+            if responded:
+                # The application already answered; the server closes the connection.
+                raise
+            await self._reject(scope, receive, send)
+        except BaseExceptionGroup as group:
+            # A task group inside the application wraps the signal in a group.
+            too_large, rest = group.split(_RequestTooLarge)
+            if too_large is None or responded:
+                raise
+            if rest is not None:
+                raise rest from None
+            await self._reject(scope, receive, send)
+
+    async def _reject(self, scope: Scope, receive: Receive, send: Send) -> None:
+        response = JSONResponse(
+            REQUEST_TOO_LARGE_BODY, status_code=413, headers={"Connection": "close"}
+        )
+        await response(scope, receive, send)
 
 
 class EdgeMiddleware:
@@ -175,6 +256,8 @@ def create_app(feature_modules: Sequence[str] = FEATURE_MODULES) -> FastAPI:
         openapi_url=None,
     )
     app.state.readiness_checks = []
+    # Added first, so it sits inside EdgeMiddleware and its 413 answers carry the security headers.
+    app.add_middleware(RequestSizeLimitMiddleware)
     app.add_middleware(EdgeMiddleware)
 
     @app.get("/healthz", include_in_schema=False)

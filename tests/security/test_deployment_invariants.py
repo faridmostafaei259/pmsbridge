@@ -205,26 +205,50 @@ def test_a_single_trusted_proxy_address_starts_in_production(
     assert (code, started) == (0, [True])
 
 
-@pytest.mark.usefixtures("restore_logging")
-@pytest.mark.xfail(
-    strict=True, raises=AssertionError, reason="open audit finding: production accepts `*`"
-)
-def test_gap_startup_refuses_a_wildcard_trusted_proxy_in_production(
-    monkeypatch: pytest.MonkeyPatch,
+@pytest.mark.parametrize("value", ["*", "0.0.0.0/0", "::/0"])
+def test_startup_refuses_a_wildcard_trusted_proxy_in_production(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], value: str
 ) -> None:
-    code, started = _start(monkeypatch, "*")
-    assert code != 0
+    code, started = _start(monkeypatch, value)
+    assert code == 1
     assert started == []
+    assert "TRUSTED_PROXIES" in capsys.readouterr().err
 
 
-@pytest.mark.xfail(
-    strict=True,
-    raises=AssertionError,
-    reason="open audit finding: Caddy's error log records full URLs and unlisted headers",
-)
 @pytest.mark.parametrize("name", ["Caddyfile.auto", "Caddyfile.internal"])
-def test_gap_caddy_error_log_filters_query_strings_and_sensitive_headers(name: str) -> None:
-    """With the app down, a 502 is logged with the full request URI (query string included)
-    and every header except Cookie and Authorization. A log `filter` block is needed."""
+def test_caddy_error_log_filters_query_strings_and_sensitive_headers(name: str) -> None:
+    """Caddy's error log comes from the default logger, which the global `log` block configures.
+
+    The block must import the shared filter, and the filter must cut the query string from the URI
+    and remove the request headers, which is how X-CSRF-Token, Proxy-Authorization and any header
+    named like a token, secret, signature or session are kept out of the log.
+    """
     text = (CADDY_DIR / name).read_text()
-    assert re.search(r"^\s*filter\b", text, re.MULTILINE)
+    block = re.search(r"^\tlog \{(.*?)^\t\}", text, re.MULTILINE | re.DOTALL)
+    assert block is not None, "no global log block"
+    assert "import /etc/caddy/log-filter.caddy" in block.group(1)
+
+    shared = (CADDY_DIR / "log-filter.caddy").read_text()
+    assert re.search(r"^format filter \{", shared, re.MULTILINE)
+    assert re.search(r"^\twrap json$", shared, re.MULTILINE)
+    assert re.search(r'^\t\trequest>uri regexp "\\\?\.\*" ""$', shared, re.MULTILINE)
+    assert re.search(r"^\t\trequest>headers delete$", shared, re.MULTILINE)
+    assert "exclude admin.api" in shared
+
+
+@pytest.mark.parametrize("name", ["site.caddy", "Caddyfile.auto", "Caddyfile.internal"])
+def test_no_caddy_log_directive_exists_outside_the_global_options_block(name: str) -> None:
+    """A site-level `log` would be an access log that bypasses the shared filter."""
+    depth = 0
+    global_block = False  # inside the first top-level bare `{` block
+    global_done = False
+    for number, raw in enumerate((CADDY_DIR / name).read_text().splitlines(), start=1):
+        line = raw.split("#", maxsplit=1)[0].strip()
+        if re.match(r"log\b", line):
+            assert name != "site.caddy", f"{name}:{number}: log directive in the shared site body"
+            assert global_block and depth == 1, f"{name}:{number}: log outside the global block"
+        if depth == 0 and line == "{" and not global_done:
+            global_block = True
+        depth += line.count("{") - line.count("}")
+        if global_block and depth == 0:
+            global_block, global_done = False, True

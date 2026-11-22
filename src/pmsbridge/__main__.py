@@ -9,10 +9,12 @@ CIDR networks, or `*` for everyone. The default is `127.0.0.1`, which trusts no 
 
 The Docker Compose stack puts the app and Caddy on a private network with a fixed subnet and gives
 Caddy a fixed address on it, then sets `TRUSTED_PROXIES` to that single address (Caddy's). The rest
-of the subnet, including the host's gateway address, is not trusted. Do not use `*` outside
-of tests.
+of the subnet, including the host's gateway address, is not trusted. A value that trusts every
+address (`*`, `0.0.0.0/0`, `::/0`) or a very large network (IPv4 shorter than /8, IPv6 shorter
+than /16) is refused when `ENVIRONMENT` is `production`.
 """
 
+import ipaddress
 import logging
 import os
 import sys
@@ -40,6 +42,38 @@ def trusted_proxies(env: Mapping[str, str]) -> str:
     return ",".join(entry for entry in entries if entry) or DEFAULT_TRUSTED_PROXIES
 
 
+# The shortest prefix accepted per IP version. A proxy list is a handful of addresses, never a
+# large part of the address space.
+MIN_TRUSTED_PREFIX_V4 = 8
+MIN_TRUSTED_PREFIX_V6 = 16
+
+
+def trusts_too_many_addresses(env: Mapping[str, str]) -> bool:
+    """True when `TRUSTED_PROXIES` has `*`, covers every address, or has a very large network.
+
+    The entries are merged per IP version first, so two halves of the address space count as all of
+    it. IPv4 prefixes shorter than /8 and IPv6 prefixes shorter than /16 are refused as well.
+    """
+    v4: list[ipaddress.IPv4Network] = []
+    v6: list[ipaddress.IPv6Network] = []
+    for entry in trusted_proxies(env).split(","):
+        if entry == "*":
+            return True
+        try:
+            network = ipaddress.ip_network(entry, strict=False)
+        except ValueError:
+            continue
+        if isinstance(network, ipaddress.IPv4Network):
+            v4.append(network)
+        else:
+            v6.append(network)
+    merged_v4 = ipaddress.collapse_addresses(v4)
+    merged_v6 = ipaddress.collapse_addresses(v6)
+    return any(n.prefixlen < MIN_TRUSTED_PREFIX_V4 for n in merged_v4) or any(
+        n.prefixlen < MIN_TRUSTED_PREFIX_V6 for n in merged_v6
+    )
+
+
 def build_config(app: FastAPI, env: Mapping[str, str]) -> uvicorn.Config:
     """Build the Uvicorn configuration. Always one worker."""
     return uvicorn.Config(
@@ -60,10 +94,18 @@ def build_config(app: FastAPI, env: Mapping[str, str]) -> uvicorn.Config:
 
 def main() -> int:
     try:
-        configure_logging(get_settings())
+        settings = get_settings()
     except SettingsError as exc:
         sys.stderr.write(f"{exc}\n")
         return 1
+    if settings.environment == "production" and trusts_too_many_addresses(os.environ):
+        sys.stderr.write(
+            "TRUSTED_PROXIES must not trust every address or a very large network (`*`, "
+            "0.0.0.0/0, ::/0) when ENVIRONMENT is production; list only the address of your "
+            "reverse proxy.\n"
+        )
+        return 1
+    configure_logging(settings)
     try:
         app = create_app()
     except Exception:

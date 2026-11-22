@@ -5,14 +5,19 @@ import textwrap
 from collections.abc import Iterator
 from pathlib import Path
 
+import anyio
 import pytest
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse
 from fastapi.testclient import TestClient
+from starlette.types import Message, Receive, Scope, Send
 
 from pmsbridge.app import (
     FEATURE_MODULES,
+    MAX_REQUEST_BODY_BYTES,
     SECURITY_HEADERS,
+    RequestSizeLimitMiddleware,
+    _RequestTooLarge,  # pyright: ignore[reportPrivateUsage]
     add_readiness_check,
     create_app,
 )
@@ -264,3 +269,173 @@ def test_create_app_returns_independent_apps() -> None:
     assert isinstance(first, FastAPI)
     assert first is not second
     assert first.state.readiness_checks is not second.state.readiness_checks
+
+
+def _app_with_body_routes() -> FastAPI:
+    app = create_app(())
+
+    @app.post("/raw")
+    async def raw(request: Request) -> dict[str, int]:
+        return {"bytes": len(await request.body())}
+
+    @app.post("/json")
+    async def parsed(payload: dict[str, str]) -> dict[str, int]:
+        return {"keys": len(payload)}
+
+    return app
+
+
+def _chunks(count: int, size: int) -> Iterator[bytes]:
+    for _ in range(count):
+        yield b"x" * size
+
+
+def test_the_body_limit_is_two_mebibytes() -> None:
+    assert MAX_REQUEST_BODY_BYTES == 2 * 1024 * 1024
+
+
+def test_a_body_at_the_limit_is_accepted() -> None:
+    client = TestClient(_app_with_body_routes())
+    response = client.post("/raw", content=b"x" * MAX_REQUEST_BODY_BYTES)
+    assert response.status_code == 200
+    assert response.json() == {"bytes": MAX_REQUEST_BODY_BYTES}
+
+
+def test_a_declared_content_length_over_the_limit_gets_413_before_the_app_runs() -> None:
+    reached: list[bool] = []
+    app = _app_with_body_routes()
+
+    @app.post("/spy")
+    async def spy() -> dict[str, str]:  # pyright: ignore[reportUnusedFunction]
+        reached.append(True)
+        return {}
+
+    response = TestClient(app).post("/spy", content=b"x" * (MAX_REQUEST_BODY_BYTES + 1))
+    assert response.status_code == 413
+    assert response.json()["error"] == "request_too_large"
+    assert response.headers["connection"] == "close"
+    assert response.headers["x-content-type-options"] == "nosniff"
+    assert reached == []
+
+
+def test_a_chunked_body_over_the_limit_gets_413() -> None:
+    client = TestClient(_app_with_body_routes())
+    # No Content-Length: the body is sent in chunks.
+    response = client.post("/raw", content=_chunks(MAX_REQUEST_BODY_BYTES // 1024 + 1, 1024))
+    assert response.status_code == 413
+    assert response.json()["error"] == "request_too_large"
+
+
+def test_a_chunked_body_over_the_limit_gets_413_on_a_route_that_parses_json() -> None:
+    client = TestClient(_app_with_body_routes())
+    response = client.post(
+        "/json",
+        content=_chunks(MAX_REQUEST_BODY_BYTES // 1024 + 1, 1024),
+        headers={"Content-Type": "application/json"},
+    )
+    assert response.status_code == 413
+
+
+def test_a_chunked_body_within_the_limit_is_accepted() -> None:
+    client = TestClient(_app_with_body_routes())
+    response = client.post("/raw", content=_chunks(MAX_REQUEST_BODY_BYTES // 1024, 1024))
+    assert response.status_code == 200
+    assert response.json() == {"bytes": MAX_REQUEST_BODY_BYTES}
+
+
+def test_a_streamed_body_is_not_read_past_the_limit() -> None:
+    """The middleware stops pulling chunks once the limit is passed (nothing is buffered)."""
+    limit = 100
+    pulled = 0
+    sent: list[Message] = []
+
+    async def receive() -> Message:
+        nonlocal pulled
+        pulled += 1
+        return {"type": "http.request", "body": b"x" * 40, "more_body": True}
+
+    async def send(message: Message) -> None:
+        sent.append(message)
+
+    async def greedy_app(scope: Scope, receive: Receive, send: Send) -> None:
+        while True:
+            await receive()
+
+    middleware = RequestSizeLimitMiddleware(greedy_app, max_bytes=limit)
+    scope: Scope = {"type": "http", "method": "POST", "path": "/", "headers": []}
+    asyncio.run(middleware(scope, receive, send))
+
+    assert pulled == 3  # 40, 80, then 120 bytes: stopped at the first chunk over the limit
+    assert sent[0]["type"] == "http.response.start"
+    assert sent[0]["status"] == 413
+
+
+def test_requests_without_a_body_are_not_affected() -> None:
+    client = TestClient(create_app(()))
+    assert client.get("/healthz").status_code == 200
+    assert client.post("/healthz", content=b"").status_code == 405
+
+
+def test_a_chunked_body_over_the_limit_read_in_a_task_group_gets_413() -> None:
+    app = _app_with_body_routes()
+
+    @app.post("/grouped")
+    async def grouped(request: Request) -> dict[str, str]:  # pyright: ignore[reportUnusedFunction]
+        async def read() -> None:
+            await request.body()
+
+        async with anyio.create_task_group() as group:
+            group.start_soon(read)
+        return {}
+
+    response = TestClient(app).post(
+        "/grouped", content=_chunks(MAX_REQUEST_BODY_BYTES // 1024 + 1, 1024)
+    )
+    assert response.status_code == 413
+
+
+def _oversized_stream_scope(headers: list[tuple[bytes, bytes]]) -> Scope:
+    return {"type": "http", "method": "POST", "path": "/", "headers": headers}
+
+
+async def _greedy_app(scope: Scope, receive: Receive, send: Send) -> None:
+    while True:
+        await receive()
+
+
+@pytest.mark.parametrize("declared", [b"-1", b"abc", b"10, 10", b""])
+def test_an_unusable_content_length_does_not_disable_the_streamed_count(declared: bytes) -> None:
+    sent: list[Message] = []
+
+    async def receive() -> Message:
+        return {"type": "http.request", "body": b"x" * 40, "more_body": True}
+
+    async def send(message: Message) -> None:
+        sent.append(message)
+
+    middleware = RequestSizeLimitMiddleware(_greedy_app, max_bytes=100)
+    scope = _oversized_stream_scope([(b"content-length", declared)])
+    asyncio.run(middleware(scope, receive, send))
+    assert [m["type"] for m in sent] == ["http.response.start", "http.response.body"]
+    assert sent[0]["status"] == 413
+
+
+def test_a_body_over_the_limit_after_the_response_started_propagates() -> None:
+    sent: list[Message] = []
+
+    async def receive() -> Message:
+        return {"type": "http.request", "body": b"x" * 40, "more_body": True}
+
+    async def send(message: Message) -> None:
+        sent.append(message)
+
+    async def answers_then_reads(scope: Scope, receive: Receive, send: Send) -> None:
+        await send({"type": "http.response.start", "status": 200, "headers": []})
+        while True:
+            await receive()
+
+    middleware = RequestSizeLimitMiddleware(answers_then_reads, max_bytes=100)
+    with pytest.raises(_RequestTooLarge):
+        asyncio.run(middleware(_oversized_stream_scope([]), receive, send))
+    assert [m["type"] for m in sent] == ["http.response.start"]
+    assert sent[0]["status"] == 200
