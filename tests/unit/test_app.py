@@ -181,6 +181,7 @@ def test_feature_without_register_is_an_error(feature_pkg: str) -> None:
 
 def test_default_feature_list_matches_the_wiring_convention() -> None:
     assert FEATURE_MODULES == (
+        "pmsbridge.core.web",
         "pmsbridge.accounts.web",
         "pmsbridge.oauth.web",
         "pmsbridge.pms.connections",

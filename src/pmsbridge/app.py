@@ -25,6 +25,7 @@ logger = logging.getLogger(__name__)
 
 # The fixed list of feature modules. Each owner implements `register(app)` in its own module.
 FEATURE_MODULES: tuple[str, ...] = (
+    "pmsbridge.core.web",
     "pmsbridge.accounts.web",
     "pmsbridge.oauth.web",
     "pmsbridge.pms.connections",
