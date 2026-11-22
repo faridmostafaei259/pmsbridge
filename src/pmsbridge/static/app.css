@@ -26,3 +26,9 @@ td button { margin: 0 0.25rem 0.25rem 0; padding: 0.25rem 0.6rem; }
 form.inline select { display: block; margin-top: 0.25rem; padding: 0.5rem; font: inherit; }
 .notice { padding: 0.5rem 0.75rem; border-left: 4px solid #1b7f3b; background: color-mix(in srgb, #1b7f3b 10%, transparent); }
 .muted { opacity: 0.7; }
+.warning { padding: 0.5rem 0.75rem; border-left: 4px solid #b26a00; background: color-mix(in srgb, #b26a00 12%, transparent); }
+.redirect .host { font-size: 1.15rem; }
+.indent { margin-left: 1.5rem; }
+.actions button { margin-right: 0.75rem; }
+code { word-break: break-all; }
+a.button { display: inline-block; padding: 0.5rem 1rem; border: 1px solid currentColor; border-radius: 0.25rem; text-decoration: none; }

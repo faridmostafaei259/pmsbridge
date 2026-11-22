@@ -5,7 +5,8 @@ rules are written once:
 
 - a person cannot disable, demote or reset the two-factor sign-in of their own account;
 - the last active administrator cannot be disabled or demoted;
-- disabling ends every session and half-finished sign-in of the person;
+- disabling ends every session and half-finished sign-in of the person, and revokes their
+  assistant (OAuth) grants, as do resetting two-factor sign-in and any role change;
 - resetting two-factor sign-in deletes the secret and the recovery codes and ends their sessions
   (an administrator then has to enroll again at the next sign-in);
 - making someone an administrator ends their sessions, so the two-factor rule applies at once.
@@ -38,6 +39,7 @@ from pmsbridge.accounts.flows import issue_token_in
 from pmsbridge.accounts.service import normalise_email
 from pmsbridge.accounts.twofactor import remove_two_factor
 from pmsbridge.core.storage import session, write_transaction
+from pmsbridge.oauth.grants import revoke_user_grants_in
 
 logger = logging.getLogger("pmsbridge.accounts")
 
@@ -165,9 +167,10 @@ async def _other_active_admins(db: AsyncSession, user_id: int) -> int:
 
 
 async def _end_access(db: AsyncSession, user_id: int) -> None:
-    """End every session and half-finished sign-in of the person."""
+    """End every session and half-finished sign-in of the person, and revoke their OAuth grants."""
     await db.execute(delete(Session).where(Session.user_id == user_id))
     await db.execute(delete(AuthFlow).where(AuthFlow.user_id == user_id))
+    await revoke_user_grants_in(db, user_id)
 
 
 async def _require_acting_admin(db: AsyncSession, acting_user_id: int | None) -> None:
@@ -327,4 +330,6 @@ async def change_role(user_id: int, role: str, acting_user_id: int | None) -> No
         user.role = role
         if role == "admin":
             await _end_access(db, user_id)
+        else:
+            await revoke_user_grants_in(db, user_id)  # a demoted person keeps no assistant access
     audit(acting_user_id, user_id, f"role {role}")

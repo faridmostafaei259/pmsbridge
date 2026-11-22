@@ -32,6 +32,8 @@ All notable changes to this project are documented here. The format follows
 - Invite staff and administrators from the dashboard with a one-time link that works once and ends after 72 hours (no e-mail is sent).
 - Users page for administrators: list people, invite, cancel invitations, disable and enable accounts, reset two-factor sign-in and change roles. Sensitive actions ask for the administrator's password and a current code, valid for 10 minutes.
 - Admin commands `users list`, `users invite`, `users disable`, `users enable` and `users reset-2fa`; the last one is also the recovery path for an administrator who lost their phone and recovery codes.
+- OAuth 2.1 authorization server, first part: discovery metadata (RFC 8414 and RFC 9728), Dynamic Client Registration (rate limited; unused registrations expire after 24 hours, idle ones after 90 days), and an authorization endpoint with mandatory PKCE (S256), exact redirect matching and RFC 9207 `iss` responses.
+- A consent screen shows the assistant's name and where the browser returns, and lets the person choose PMS connections. Authorization codes are single use, last 5 minutes and are stored only as hashes.
 
 ### Security
 - Strict default Content-Security-Policy, `X-Frame-Options: DENY`, `nosniff` and `no-referrer` headers; error responses never include stack traces.
@@ -48,6 +50,7 @@ All notable changes to this project are documented here. The format follows
 - Dashboard pages send a strict Content-Security-Policy (same-origin styles, no scripts) and `Referrer-Policy: same-origin`.
 - Wrong two-factor codes are limited to 5 per 15 minutes and 20 per 24 hours per person; each code works once; authenticator secrets are encrypted at rest and covered by key rotation. An administrator session without confirmed two-factor sign-in is ended on the next request, and a password reset ends sign-ins that began with the old password.
 - The last active administrator cannot be disabled or demoted, and administrators cannot lock themselves out. Disabling an account, resetting two-factor sign-in or promoting staff to administrator signs the person out everywhere. User ids are never reused after a person or invitation is deleted.
+- Authorization request errors show a page with a "Return to <host>" link and never redirect automatically, so the server cannot be used as an open redirector. Disabling a person, resetting their password or two-factor sign-in, or changing their role revokes the assistant approvals they gave.
 - The application refuses to start in production when `TRUSTED_PROXIES` trusts every address (`*`, `0.0.0.0/0`, `::/0`) or a very large network (IPv4 shorter than /8, IPv6 shorter than /16).
 - The application rejects request bodies over 2 MiB with 413, by declared length and by counting streamed bodies, so traffic that reaches it without Caddy is also capped.
 - Caddy's log no longer records query strings or request headers in either TLS mode.

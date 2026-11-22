@@ -1,6 +1,6 @@
 # 0011. Opaque OAuth tokens and dynamic client registration
 
-- Status: accepted
+- Status: accepted (amended 2026-11-22: metadata documents added)
 - Date: 2026-11-22
 
 ## Context
@@ -13,12 +13,18 @@ server and the MCP endpoint run in the same process and share one database (deci
   audience. There are no signing keys, so nothing needs to be rotated and revocation takes effect immediately.
 - Access tokens live at most one hour; refresh tokens rotate on every use, and reuse of an old refresh token revokes the
   whole grant.
-- Clients register with Dynamic Client Registration (RFC 7591), rate limited, and registrations that are never used
-  expire. Client ID Metadata Documents (fetching a client's metadata from a URL) are not supported yet, because they
-  require outbound requests to arbitrary hosts; this is revisited when assistants need it.
-- Authorization uses the code flow with mandatory PKCE (S256), exact redirect URI matching, the `resource` parameter
+- Clients can identify themselves either way the MCP authorization specification allows: Dynamic Client Registration
+  (RFC 7591), rate limited, with unused registrations expiring; and Client ID Metadata Documents (an HTTPS URL used as
+  the client id, which pmsbridge fetches). The specification (2026-07-28) recommends metadata documents and keeps
+  registration for compatibility, so both are supported. Fetching a metadata document is the only outbound request an
+  assistant can trigger; it is limited to HTTPS on port 443, refuses private, loopback and link-local addresses
+  (checked after DNS resolution, no redirects), caps size and time, and caches results.
+- Authorization uses the code flow with mandatory PKCE (S256), exact redirect URI matching (the only exception: for
+  http loopback IP addresses, 127.0.0.1 and [::1], the port may differ, as RFC 8252 requires), the `resource` parameter
   bound to the MCP endpoint URL, and a consent screen where the person chooses which PMS connections the assistant may
-  use.
+  use. An approval given before any connection exists covers no connections; the person chooses them later.
+- Before the person has signed in and acted on the consent screen, the server never redirects automatically to a
+  client's address: request errors show a page naming the return host with a link back (RFC 9700 4.11.2).
 
 ## Consequences
 - The planned `pmsbridge rotate-oauth-keys` command is not needed and is dropped.

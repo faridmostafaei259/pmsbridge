@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+{% block title %}Request problem - pmsbridge{% endblock %}
+{% block content %}
+<section class="card">
+  <h1>This connection request has a problem</h1>
+  <p class="error" role="alert">{{ description }}</p>
+  <p>
+    Nothing was shared. You can return to <strong class="host">{{ redirect_host }}</strong> and
+    tell it what went wrong, or close this page.
+  </p>
+  <p class="muted">Return address: <code>{{ redirect_uri }}</code></p>
+  {% if on_this_computer %}
+  <p class="warning">
+    This address is on the computer you are using now. Return only if you just started this
+    connection from an application on this computer.
+  </p>
+  {% endif %}
+  <p><a class="button" href="{{ return_url }}">Return to {{ redirect_host }}</a></p>
+</section>
+{% endblock %}

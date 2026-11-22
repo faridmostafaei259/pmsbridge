@@ -302,3 +302,81 @@ access to it limited.
 
 **What exists today.** As for `create-admin`, the `python -m pmsbridge.admin` entry point and the host
 command `pmsbridge users` arrive with the installer and command-line tool.
+
+## Authorizing AI assistants
+
+An AI assistant (for example a chat application that supports MCP servers) connects to pmsbridge in four
+steps. It looks up how to connect, registers itself, sends the person who is using it to pmsbridge to approve,
+and then receives access. This section covers the approval step. The step after it, where the assistant
+exchanges the approval for access it can use, is not available yet, so assistants cannot finish
+connecting yet.
+
+Any signed-in person, staff or administrator, can approve an assistant. Administrators must have two-factor
+sign-in on, as everywhere else. Nobody else can approve: a visitor who is not signed in is sent to the sign-in
+page first and returns to the approval page afterwards.
+
+### What the approval page shows
+
+When an assistant asks for access, you see a page titled "Allow *name* to use pmsbridge?". Read it before you
+press anything:
+
+- **The name** is chosen by the assistant itself when it registers, and pmsbridge does not verify it. Anyone
+  can register an assistant under any name, so a familiar name is not proof that it is the application you
+  think it is.
+- **Where your browser goes back to** is shown in large type ("your browser goes back to *host*") with the full
+  address underneath. This is the part to check. If you just started the connection from a well-known
+  application, the host should belong to that application. If it is an address you do not recognise, press
+  **Cancel**.
+- **An address on your own computer** (`127.0.0.1`, `[::1]` or `localhost`) is normal for assistants that run
+  as desktop programs. The page adds a warning, because it means the approval goes to whatever program on this
+  computer is listening there. Approve only if you just started the connection from an application on the
+  computer you are using.
+- **What it allows:** the assistant can read and use the PMS connections you choose, acting as you, until you or
+  an administrator stops it. It never sees your password.
+
+**Allow access** sends your browser back to the assistant with a one-time approval that works for 5 minutes and
+once. **Cancel** sends it back with a refusal. Either way nothing is shared until you press the button, and
+doing nothing leaves nothing behind.
+
+### If the request itself is wrong
+
+If the assistant's request is malformed (for example it asks for an unsupported kind of response or sends no
+proof-of-possession value), you see a page titled "This connection request has a problem". It names the host
+your browser would go back to and offers a **Return to *host*** link that carries the error to the assistant.
+pmsbridge never sends your browser to the assistant's address by itself for a request error: you choose
+whether to follow the link. Nothing was shared. The browser goes back automatically only after you press
+**Allow access** or **Cancel**.
+
+### Choosing connections
+
+The page has a section **PMS connections**. Once PMS connections exist, it lists yours: tick the ones the
+assistant may use, or choose "All of my connections, including ones added later". pmsbridge records the
+choice, and the assistant can use only the connections you ticked once assistants can connect. Until the first
+connection is added, the page says "You have no PMS connections yet, so this assistant gets access to none":
+an approval given now covers no connections, and it does not extend to connections added later. Once a
+connection exists, approve the assistant again and choose which connections it may use.
+
+### Registration, expiry and limits
+
+Assistants register themselves without a person present. To keep that from filling the database or being
+abused:
+
+- registration is limited to 10 per hour per visitor address and 30 per hour for the whole installation. A
+  company's public address counts as one visitor, so everyone behind it shares the 10 per hour. Visitors that
+  arrive from a private network or a VPN cannot be told apart and share only the installation-wide limit. When
+  a limit is reached the assistant is told to try again later; waiting an hour is the remedy;
+- an assistant that registered but was never approved is forgotten after 24 hours, and one that was approved
+  is forgotten after 90 days without activity (the assistant then registers again and asks the person again);
+- redirect addresses must be `https`, or `http` on the local computer. For `127.0.0.1` and `[::1]` the port may
+  change from one connection to the next, because desktop assistants pick a free port each time; everything
+  else about the address must match exactly.
+
+If a connection attempt shows "This request names an application that is not registered here" or "asks to
+return to an address the application did not register", start the connection again in the assistant. Nothing
+was shared.
+
+### When access ends
+
+Disabling a person, resetting their two-factor sign-in, resetting their password, or changing their role (to
+administrator or to staff) cancels every approval they gave to assistants, immediately. Seeing and
+cancelling your own approvals, and the administrator command to cancel everyone's, are not available yet.

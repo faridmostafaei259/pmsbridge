@@ -1,0 +1,56 @@
+{% extends "base.html" %}
+{% block title %}Allow access - pmsbridge{% endblock %}
+{% block content %}
+<section class="card">
+  <h1>Allow {{ client_name }} to use pmsbridge?</h1>
+  <p class="muted">The name above is chosen by the application itself. pmsbridge has not verified it.</p>
+  <p class="redirect">
+    If you continue, your browser goes back to <strong class="host">{{ redirect_host }}</strong>.
+  </p>
+  <p class="muted">Full address: <code>{{ redirect_uri }}</code></p>
+  {% if on_this_computer %}
+  <p class="warning">
+    This address is on the computer you are using now. Continue only if you just started this
+    connection from an application on this computer.
+  </p>
+  {% endif %}
+  <h2>What this allows</h2>
+  <p>
+    The application will be able to read and use the PMS connections you choose below, acting as
+    {{ user.email }}, until you or an administrator stops it. It never sees your password.
+  </p>
+  {% if error %}
+  <p class="error" role="alert">{{ error }}</p>
+  {% endif %}
+  <form method="post" action="{{ authorize_path }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    {% for name, value in hidden %}
+    <input type="hidden" name="{{ name }}" value="{{ value }}">
+    {% endfor %}
+    <h2>PMS connections</h2>
+    {% if connections %}
+    <p>
+      <label><input type="radio" name="mode" value="selected" checked> Only the connections I tick</label>
+    </p>
+    {% for connection in connections %}
+    <p class="indent">
+      <label><input type="checkbox" name="connection" value="{{ connection.id }}"> {{ connection.label }}</label>
+    </p>
+    {% endfor %}
+    <p>
+      <label><input type="radio" name="mode" value="all"> All of my connections, including ones added later</label>
+    </p>
+    {% else %}
+    <p>
+      You have no PMS connections yet, so this assistant gets access to none. You can choose
+      connections for it once they exist.
+    </p>
+    <input type="hidden" name="mode" value="selected">
+    {% endif %}
+    <div class="actions">
+      <button type="submit" name="decision" value="approve">Allow access</button>
+      <button type="submit" name="decision" value="deny">Cancel</button>
+    </div>
+  </form>
+</section>
+{% endblock %}

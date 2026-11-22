@@ -32,6 +32,7 @@ from pmsbridge.accounts.flows import (
 from pmsbridge.accounts.pages import render
 from pmsbridge.accounts.twofactor import add_totp, replace_recovery_codes
 from pmsbridge.core.storage import write_transaction
+from pmsbridge.oauth.grants import revoke_user_grants_in
 
 logger = logging.getLogger("pmsbridge.accounts")
 
@@ -55,7 +56,8 @@ async def finalize_link(
 
     For `setup` and `invite` the account becomes active with the password chosen in the flow (and,
     for an administrator, the confirmed authenticator). For `reset` only the password changes,
-    and every session of the person ends. A link that was already used raises a page error.
+    every session of the person ends and their assistant (OAuth) grants are revoked. A link that
+    was already used raises a page error.
     """
     async with write_transaction() as db:
         # The link may run out while the flow is open: it must still be live when it is used up.
@@ -74,6 +76,7 @@ async def finalize_link(
             await db.execute(delete(Session).where(Session.user_id == user.id))
             # Also half-finished sign-ins that began with the old password.
             await db.execute(delete(AuthFlow).where(AuthFlow.user_id == user.id))
+            await revoke_user_grants_in(db, user.id)
             codes: list[str] = []
         else:
             user.is_active = True

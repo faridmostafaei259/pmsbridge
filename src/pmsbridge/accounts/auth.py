@@ -120,8 +120,8 @@ def get_csrf_token(request: Request) -> str:
     return csrf.mask_token(secret)
 
 
-async def read_form(request: Request) -> dict[str, str]:
-    """Read a small URL-encoded form body. The first value of each field wins."""
+async def read_form_pairs(request: Request) -> list[tuple[str, str]]:
+    """Read a small URL-encoded form body as (name, value) pairs, keeping repeated fields."""
     content_type = request.headers.get("content-type", "").split(";")[0].strip().lower()
     if content_type != _FORM_TYPE:
         raise PageError(400, "The form could not be read. Reload the page and try again.")
@@ -131,13 +131,22 @@ async def read_form(request: Request) -> dict[str, str]:
         if len(body) > MAX_FORM_BYTES:
             raise PageError(413, "The form is too large.")
     try:
-        pairs = parse_qsl(body.decode(), keep_blank_values=True, max_num_fields=MAX_FORM_FIELDS)
+        return parse_qsl(body.decode(), keep_blank_values=True, max_num_fields=MAX_FORM_FIELDS)
     except ValueError:
         raise PageError(400, "The form could not be read. Reload the page and try again.") from None
+
+
+def first_values(pairs: list[tuple[str, str]]) -> dict[str, str]:
+    """The first value of each field."""
     form: dict[str, str] = {}
     for name, value in pairs:
         form.setdefault(name, value)
     return form
+
+
+async def read_form(request: Request) -> dict[str, str]:
+    """Read a small URL-encoded form body. The first value of each field wins."""
+    return first_values(await read_form_pairs(request))
 
 
 async def verify_csrf(
