@@ -38,6 +38,11 @@ All notable changes to this project are documented here. The format follows
 - OAuth token revocation endpoint (RFC 7009), advertised in the authorization server metadata.
 - A Connected apps page where people see, revoke and choose connections for the assistants they approved, and an Assistants page for administrators (re-authentication required to revoke).
 - `oauth revoke-ai-access` administrator command (by person, by assistant, or everything with `--yes`); prints counts only.
+- OAuth Client ID Metadata Documents: an AI assistant can identify itself with an https web address; pmsbridge downloads and validates the assistant's details for a signed-in person, shows the verified host on the approval page, and advertises support in the authorization server metadata. Registration still works.
+- `oauth revoke-ai-access --client` accepts an assistant's web address as well as its client id.
+
+### Fixed
+- Newly registered assistants never get a client id that starts with a minus sign, which the `--client` option of `oauth revoke-ai-access` could not accept; `--client=<id>` also works for older ids.
 
 ### Security
 - Strict default Content-Security-Policy, `X-Frame-Options: DENY`, `nosniff` and `no-referrer` headers; error responses never include stack traces.
@@ -56,6 +61,7 @@ All notable changes to this project are documented here. The format follows
 - The last active administrator cannot be disabled or demoted, and administrators cannot lock themselves out. Disabling an account, resetting two-factor sign-in or promoting staff to administrator signs the person out everywhere. User ids are never reused after a person or invitation is deleted.
 - Authorization request errors show a page with a "Return to <host>" link and never redirect automatically, so the server cannot be used as an open redirector. Disabling a person, resetting their password or two-factor sign-in, or changing their role revokes the assistant approvals they gave.
 - Assistant access ends immediately when a person is disabled, their password or two-factor sign-in is reset, or their role changes; an administrator without two-factor sign-in cannot use refresh tokens. Tokens are stored only as SHA-256 hashes and never logged. Failed token requests are limited per address, and wrong secrets per assistant that has a secret; a public assistant's id never blocks anyone.
+- Downloading an assistant's details is done only for signed-in people and is tightly limited: https on port 443, a real host name, public addresses only (every answer checked, connection pinned), no redirects, 5 seconds and 16 KiB, and 30 per hour overall, 5 per host and 10 per person.
 - The application refuses to start in production when `TRUSTED_PROXIES` trusts every address (`*`, `0.0.0.0/0`, `::/0`) or a very large network (IPv4 shorter than /8, IPv6 shorter than /16).
 - The application rejects request bodies over 2 MiB with 413, by declared length and by counting streamed bodies, so traffic that reaches it without Caddy is also capped.
 - Caddy's log no longer records query strings or request headers in either TLS mode.

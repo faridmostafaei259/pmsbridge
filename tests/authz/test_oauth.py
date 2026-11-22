@@ -7,6 +7,7 @@ from collections.abc import AsyncIterator, Callable
 from datetime import UTC, datetime, timedelta
 from urllib.parse import parse_qs, urlsplit
 
+import httpcore
 import httpx
 import pytest
 from argon2 import PasswordHasher
@@ -22,8 +23,10 @@ from pmsbridge.app import create_app
 from pmsbridge.core.crypto import generate_key
 from pmsbridge.core.settings import clear_settings_cache
 from pmsbridge.core.storage import reset_database, session, write_transaction
+from pmsbridge.oauth.client_metadata import ClientMetadataService, set_metadata_service
 from pmsbridge.oauth.db import OAuthClient, OAuthGrant
 from pmsbridge.oauth.grants import redeem_code, revoke_grants
+from pmsbridge.oauth.metadata_fetch import MetadataFetcher
 from pmsbridge.oauth.tokens import validate_access_token
 
 BASE_URL = "https://pms.example.test"
@@ -558,3 +561,75 @@ async def test_the_assistants_page_shows_each_client_id(
     await access_token(staff, client_id)
     listing = await admin.get("/admin/assistants")
     assert f"<code>{client_id}</code>" in listing.text
+
+
+class NoNetwork(httpcore.AsyncNetworkBackend):
+    """A network that fails the test if anything tries to connect."""
+
+    async def connect_tcp(
+        self,
+        host: str,
+        port: int,
+        timeout: float | None = None,  # noqa: ASYNC109  (the interface of httpcore)
+        local_address: str | None = None,
+        socket_options: object = None,
+    ) -> httpcore.AsyncNetworkStream:
+        raise AssertionError(f"a connection to {host} was attempted")
+
+    async def sleep(self, seconds: float) -> None:
+        return None
+
+
+@pytest.mark.parametrize(
+    "private", ["127.0.0.1", "10.0.0.5", "169.254.169.254", "::1", "fd00:ec2::254"]
+)
+@pytest.mark.parametrize("signed_in", [False, True])
+async def test_a_web_address_client_id_never_makes_pmsbridge_contact_a_private_network(
+    browser: Browser, accounts: dict[str, int], private: str, signed_in: bool
+) -> None:
+    lookups: list[str] = []
+
+    async def resolve(host: str) -> list[str]:
+        lookups.append(host)
+        return [private]
+
+    set_metadata_service(
+        ClientMetadataService(MetadataFetcher(resolver=resolve, backend=NoNetwork()))
+    )
+    try:
+        client = browser()
+        if signed_in:
+            await sign_in(client, STAFF)
+        response = await client.get(
+            "/oauth/authorize", params=params_for("https://assistant.example.test/client.json")
+        )
+    finally:
+        set_metadata_service(None)
+    if signed_in:
+        assert response.status_code == 400
+        assert "location" not in response.headers
+        assert lookups == ["assistant.example.test"]
+    else:
+        # A visitor who is not signed in is sent to sign in and causes no lookup at all.
+        assert response.status_code == 303 and response.headers["location"].startswith("/login")
+        assert lookups == []
+
+
+async def test_the_token_and_revoke_endpoints_cause_no_lookup_for_a_web_address(
+    browser: Browser, accounts: dict[str, int]
+) -> None:
+    async def resolve(host: str) -> list[str]:
+        raise AssertionError(f"a lookup of {host} was attempted")
+
+    set_metadata_service(
+        ClientMetadataService(MetadataFetcher(resolver=resolve, backend=NoNetwork()))
+    )
+    try:
+        client = browser()
+        form = {"client_id": "https://assistant.example.test/client.json", "token": "x"}
+        token = await client.post("/oauth/token", data={**form, "grant_type": "refresh_token"})
+        revoke = await client.post("/oauth/revoke", data=form)
+    finally:
+        set_metadata_service(None)
+    assert token.status_code in (400, 401) and token.json()["error"] == "invalid_client"
+    assert revoke.status_code in (400, 401)

@@ -4,6 +4,12 @@ Order of checks:
 
 1. The client and the redirect URI. If either is unknown or does not match, the person sees an
    error page and is never redirected anywhere: the address cannot be trusted yet.
+   A `client_id` that is a web address (see `client_metadata.py`) is handled in two stages, so
+   that a stranger can never make pmsbridge fetch anything. Before sign-in only the format of the
+   address is checked, and a stored copy of the client's details, however old, is used to judge
+   the redirect URI; with no stored copy the visitor goes to sign-in without the redirect URI
+   being judged. After sign-in the details are fetched (or a fresh stored copy used) for that
+   person, the redirect URI is judged, and any failure is an error page.
 2. Not signed in: to the sign-in page and back, before anything else is judged. A visitor who has
    not signed in is never sent on to the client's address.
 3. Everything else (response type, PKCE, resource, state). A mistake here shows an error page that
@@ -46,8 +52,14 @@ from pmsbridge.accounts.auth import (
 )
 from pmsbridge.accounts.pages import PAGE_CSP, render
 from pmsbridge.oauth import clients, consent, grants
+from pmsbridge.oauth.client_metadata import FetchRateLimitedError, metadata_service
 from pmsbridge.oauth.config import AUTHORIZE_PATH, SCOPE, is_mcp_resource, issuer, mcp_resource
 from pmsbridge.oauth.db import OAuthClient
+from pmsbridge.oauth.metadata_fetch import (
+    MetadataFetchError,
+    is_url_client_id,
+    validate_client_id_url,
+)
 from pmsbridge.oauth.redirects import (
     LOOPBACK_HOSTS,
     redirect_host,
@@ -67,12 +79,14 @@ _RETRY = "Go back to the assistant and start the connection again."
 class AuthorizeRequest:
     """A validated authorization request."""
 
-    client_id: str
+    client_id: str  # as the assistant knows it (its web address for a metadata document)
     client_name: str
     redirect_uri: str
     code_challenge: str
     state: str | None
     resource: str
+    client_key: str  # the stored client's key, used for grants and codes
+    identity_host: str | None = None  # the verified host of a web address client id
 
 
 class AuthorizationError(Exception):
@@ -123,11 +137,44 @@ def _error_page(request: Request, error: AuthorizationError) -> Response:
     )
 
 
-async def check_client(params: Mapping[str, str], repeated: Iterable[str] = ()) -> OAuthClient:
-    """Step 1: the client and redirect URI. Raises `PageError`; nothing here redirects."""
+async def _resolve_web_address(client_id: str, person: int) -> OAuthClient:
+    try:
+        return await metadata_service().resolve(client_id, person)
+    except FetchRateLimitedError as error:
+        raise PageError(429, f"{error} {_RETRY}") from None
+    except MetadataFetchError as error:
+        raise PageError(400, f"{error} {_RETRY}") from None
+
+
+async def _find_client(client_id: str, user_id: int | None) -> OAuthClient | None:
+    if not is_url_client_id(client_id):
+        return await clients.get_client(client_id)
+    try:
+        validate_client_id_url(client_id)
+    except MetadataFetchError as error:
+        raise PageError(400, f"{error} {_RETRY}") from None
+    if user_id is None:
+        return await clients.get_client(client_id)  # stored copy only, however old; no fetch
+    return await _resolve_web_address(client_id, user_id)
+
+
+async def check_client(
+    params: Mapping[str, str], repeated: Iterable[str] = (), user_id: int | None = None
+) -> OAuthClient | None:
+    """Step 1: the client and redirect URI. Raises `PageError`; nothing here redirects.
+
+    Returns None only for a visitor who is not signed in (`user_id` is None) whose web address
+    client has no stored copy yet: the caller sends them to sign in, and the details are fetched
+    afterwards.
+    """
     repeated = set(repeated)
-    client = await clients.get_client(params.get("client_id", ""))
-    if client is None or "client_id" in repeated:
+    client_id = params.get("client_id", "")
+    client: OAuthClient | None = None
+    if "client_id" not in repeated:
+        client = await _find_client(client_id, user_id)
+    if client is None:
+        if user_id is None and "client_id" not in repeated and is_url_client_id(client_id):
+            return None
         raise PageError(
             400, f"This request names an application that is not registered here. {_RETRY}"
         )
@@ -168,7 +215,14 @@ def check_parameters(
     if not is_mcp_resource(resource):
         raise refuse("invalid_target", "The resource must be this server's MCP address.")
     return AuthorizeRequest(
-        client.client_id, client.client_name, redirect_uri, challenge, state, mcp_resource()
+        client.public_id,
+        client.client_name,
+        redirect_uri,
+        challenge,
+        state,
+        mcp_resource(),
+        client.client_id,
+        redirect_host(client.client_url) if client.client_url else None,
     )
 
 
@@ -205,6 +259,8 @@ async def _consent_page(
         "oauth/consent.html",
         status_code=status,
         client_name=req.client_name,
+        identity_host=req.identity_host,
+        client_address=req.client_id if req.identity_host else None,
         redirect_host=host,
         redirect_uri=req.redirect_uri,
         on_this_computer=host.strip("[]") in LOOPBACK_HOSTS,
@@ -225,9 +281,9 @@ def register_routes(app: FastAPI) -> None:
         pairs = request.query_params.multi_items()
         values = first_values(pairs)
         repeated = {name for name in values if sum(1 for key, _ in pairs if key == name) > 1}
-        client = await check_client(values, repeated)
         user = await current_user_or_none(request)
-        if user is None:
+        client = await check_client(values, repeated, None if user is None else user.user_id)
+        if user is None or client is None:
             target = safe_next(f"{request.url.path}?{request.url.query}")
             return RedirectResponse(f"/login?next={quote(target, safe='')}", 303)
         try:
@@ -248,7 +304,9 @@ def register_routes(app: FastAPI) -> None:
             for name in ("client_id", "redirect_uri", "state", "resource", "code_challenge")
             if sum(1 for key, _ in pairs if key == name) > 1
         }
-        client = await check_client(form, repeated)
+        client = await check_client(form, repeated, user.user_id)
+        if client is None:  # only for a visitor who is not signed in, which require_user excludes
+            raise PageError(400, "The form could not be read. Reload the page and try again.")
         try:
             req = check_parameters(form, repeated, client)
         except AuthorizationError as error:
@@ -275,14 +333,14 @@ def register_routes(app: FastAPI) -> None:
             code = await grants.create_grant_and_code(
                 user.user_id,
                 grants.CodeRequest(
-                    req.client_id, req.redirect_uri, req.code_challenge, req.resource, SCOPE
+                    req.client_key, req.redirect_uri, req.code_challenge, req.resource, SCOPE
                 ),
                 selection,
             )
         except grants.ClientGoneError:
             raise PageError(400, f"This application's registration has expired. {_RETRY}") from None
         logger.info(
-            "assistant authorized", extra={"user_id": user.user_id, "client_id": req.client_id}
+            "assistant authorized", extra={"user_id": user.user_id, "client_id": req.client_key}
         )
         params = {"code": code}
         if req.state is not None:

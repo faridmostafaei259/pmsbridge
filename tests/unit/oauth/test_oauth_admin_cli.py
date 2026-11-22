@@ -7,10 +7,21 @@ from dataclasses import dataclass
 
 import httpx
 import pytest
-from oauth_helpers import EMAIL, connect, sign_in
+from cimd_helpers import CLIENT_URL, FakeInternet
+from oauth_helpers import (
+    EMAIL,
+    code_form,
+    connect,
+    get_code,
+    register_client,
+    sign_in,
+    token_request,
+)
 
 from pmsbridge.accounts.service import create_user
 from pmsbridge.admin import oauth as admin_oauth
+from pmsbridge.oauth import clients
+from pmsbridge.oauth.client_metadata import derived_client_id
 from pmsbridge.oauth.tokens import validate_access_token
 
 OTHER_EMAIL = "grace@example.test"
@@ -155,3 +166,43 @@ async def test_unknown_people_and_assistants_are_refused(
     malformed = await run(capsys, "--client", "../etc")
     assert malformed.code == 2
     assert await alive(two_people) == (True, True)
+
+
+@pytest.mark.parametrize("by_address", [True, False])
+async def test_an_assistant_that_uses_a_web_address_is_named_by_its_address_or_its_key(
+    browser: httpx.AsyncClient,
+    api: httpx.AsyncClient,
+    internet: FakeInternet,
+    capsys: pytest.CaptureFixture[str],
+    by_address: bool,
+) -> None:
+    internet.serve_document()
+    code = await get_code(browser, CLIENT_URL)
+    issued = (await token_request(api, code_form(CLIENT_URL, code))).json()
+    assert await validate_access_token(issued["access_token"]) is not None
+    selector = CLIENT_URL if by_address else derived_client_id(CLIENT_URL)
+    result = await run(capsys, "--client", selector)
+    assert (result.code, "Approvals cancelled: 1" in result.out) == (0, True)
+    assert await validate_access_token(issued["access_token"]) is None
+    unknown = await run(capsys, "--client", "https://other.example.test/client.json")
+    assert unknown.code == 1
+
+
+async def test_registered_client_ids_never_start_with_a_minus_sign(
+    anonymous: httpx.AsyncClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A leading "-" made `--client <id>` fail as an option on about 1 id in 64 (a flaky test)."""
+    offered = iter(["-" + "a" * 31, "-" + "b" * 31, "c" * 32])
+    monkeypatch.setattr(clients.secrets, "token_urlsafe", lambda _n: next(offered))
+    client_id = str((await register_client(anonymous))["client_id"])
+    assert client_id == "c" * 32
+
+
+async def test_an_older_id_that_starts_with_a_minus_sign_is_accepted_in_the_equals_form(
+    person: int, capsys: pytest.CaptureFixture[str]
+) -> None:
+    result = await run(capsys, "--client=-" + "a" * 31)
+    assert result.code == 1  # read as a client id (unknown), not rejected as an unknown option
+    assert "no assistant" in result.err
+    with pytest.raises(SystemExit):
+        await run(capsys, "--client", "-" + "a" * 31)  # the separate form cannot work

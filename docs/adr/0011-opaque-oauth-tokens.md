@@ -18,7 +18,11 @@ server and the MCP endpoint run in the same process and share one database (deci
   the client id, which pmsbridge fetches). The specification (2026-07-28) recommends metadata documents and keeps
   registration for compatibility, so both are supported. Fetching a metadata document is the only outbound request an
   assistant can trigger; it is limited to HTTPS on port 443, refuses private, loopback and link-local addresses
-  (checked after DNS resolution, no redirects), caps size and time, and caches results.
+  (checked after DNS resolution, no redirects), caps size and time, and caches results. A metadata document is fetched
+  only after the person has signed in (a stored copy may be used before that to check the return address), with a
+  per-person, per-host and installation-wide allowance. A failed fetch is remembered for 5 minutes only to suppress
+  retries: nothing from the failed response is kept or used as client metadata, which is how this implementation reads
+  the draft's rule against caching error responses.
 - Authorization uses the code flow with mandatory PKCE (S256), exact redirect URI matching (the only exception: for
   http loopback IP addresses, 127.0.0.1 and [::1], the port may differ, as RFC 8252 requires), the `resource` parameter
   bound to the MCP endpoint URL, and a consent screen where the person chooses which PMS connections the assistant may

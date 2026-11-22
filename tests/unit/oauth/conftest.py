@@ -1,11 +1,12 @@
 """Fixtures for the OAuth tests: an app with real migrations and a signed-in person."""
 
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Iterator
 from pathlib import Path
 
 import httpx
 import pytest
 from argon2 import PasswordHasher
+from cimd_helpers import FakeInternet
 from fastapi import FastAPI
 from httpx import ASGITransport
 from oauth_helpers import BASE_URL, EMAIL, PASSWORD, Browser, sign_in
@@ -16,6 +17,7 @@ from pmsbridge.app import create_app
 from pmsbridge.core.crypto import generate_key
 from pmsbridge.core.settings import Settings, clear_settings_cache
 from pmsbridge.core.storage import reset_database
+from pmsbridge.oauth.client_metadata import ClientMetadataService, set_metadata_service
 
 
 @pytest.fixture(autouse=True)
@@ -71,3 +73,16 @@ async def browser(anonymous: httpx.AsyncClient, person: int) -> httpx.AsyncClien
 @pytest.fixture
 def dev_settings(tmp_path: Path) -> Settings:
     return Settings(environment="development", data_dir=tmp_path / "data")
+
+
+@pytest.fixture
+def internet() -> FakeInternet:
+    return FakeInternet()
+
+
+@pytest.fixture(autouse=True)
+def _metadata_service(internet: FakeInternet) -> Iterator[None]:
+    """Every test starts with a fresh service on the fake internet (never the real one)."""
+    set_metadata_service(ClientMetadataService(internet.fetcher()))
+    yield
+    set_metadata_service(None)

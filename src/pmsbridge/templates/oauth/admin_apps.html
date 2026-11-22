@@ -20,7 +20,7 @@
       <tr>
         <td>{{ item.email }}</td>
         <td>{{ item.client_name }}</td>
-        <td><code>{{ item.client_id }}</code></td>
+        <td><code>{{ item.client_id }}</code>{% if item.identity_host %}<br>web address: {{ item.identity_host }}{% endif %}</td>
         <td>{{ item.hosts | join(", ") }}</td>
         <td>{{ item.approved_at.strftime("%Y-%m-%d %H:%M UTC") }}</td>
         <td>{{ item.last_used_at.strftime("%Y-%m-%d %H:%M UTC") if item.last_used_at else "never" }}</td>

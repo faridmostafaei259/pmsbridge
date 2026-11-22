@@ -13,7 +13,9 @@ assistant registered for it, a refresh token. `refresh_token` rotates the refres
 check of a confidential client is also counted under that client's id; a key that fails too often is
 refused for a few minutes with 429. A public client has no secret to guess, so its claimed id never
 blocks a request: anyone can claim any public client id, and counting it would let a stranger lock
-the real assistant out. A grant refreshed more than 10 times in a minute is told to wait.
+the real assistant out. A client that named itself with a web address (`client_metadata.py`) is a
+public client found by that address among the stored clients; this endpoint never fetches anything.
+A grant refreshed more than 10 times in a minute is told to wait.
 """
 
 import base64
@@ -34,12 +36,13 @@ from pmsbridge.accounts.sessions import hash_token
 from pmsbridge.oauth import clients, grants, tokens
 from pmsbridge.oauth.config import REVOKE_PATH, SCOPE, TOKEN_PATH, is_mcp_resource
 from pmsbridge.oauth.db import OAuthClient
+from pmsbridge.oauth.metadata_fetch import MAX_URL_LENGTH
 
 logger = logging.getLogger("pmsbridge.oauth")
 
 MAX_BODY_BYTES: Final = 8 * 1024
 MAX_FIELDS: Final = 20
-MAX_CLIENT_ID: Final = 64
+MAX_CLIENT_ID: Final = MAX_URL_LENGTH  # a registered id is shorter; a web address up to this
 MAX_SECRET: Final = 256
 CLIENT_MAX_FAILURES: Final = 20
 ADDRESS_MAX_FAILURES: Final = 30

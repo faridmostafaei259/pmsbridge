@@ -11,7 +11,8 @@ process anyone's data.
 ## Decision
 - pmsbridge never sends data to the maintainers or to any third party chosen by the project: no telemetry, no
   analytics, no license checks, no crash reporting. Outbound connections go only to the operator's PMS, the
-  certificate authority, and GitHub release metadata when the operator runs an update check.
+  certificate authority, GitHub release metadata when the operator runs an update check, and the web address an AI
+  assistant uses as its identity, fetched under the guarded rules in decision 0011 (no data is sent with that request).
 - PMS credentials and all PMS data stay on the operator's server. Data the AI assistant reads through pmsbridge is
   sent to that assistant, which the operator chose and which is governed by the assistant provider's own terms.
 - The operator decides what the assistant may do. Actions that change PMS data are available but switched off by

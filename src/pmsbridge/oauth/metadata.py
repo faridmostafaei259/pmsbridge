@@ -51,6 +51,7 @@ def authorization_server_metadata() -> dict[str, object]:
         "token_endpoint_auth_methods_supported": list(AUTH_METHODS),
         "scopes_supported": [SCOPE],
         "authorization_response_iss_parameter_supported": True,
+        "client_id_metadata_document_supported": True,
     }
 
 

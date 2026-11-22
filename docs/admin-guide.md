@@ -306,7 +306,8 @@ command `pmsbridge users` arrive with the installer and command-line tool.
 ## Authorizing AI assistants
 
 An AI assistant (for example a chat application that supports MCP servers) connects to pmsbridge in four
-steps. It looks up how to connect, registers itself, sends the person who is using it to pmsbridge to approve,
+steps. It looks up how to connect, identifies itself (by registering, or by giving a web address, see
+[Assistants that identify themselves by a web address](#assistants-that-identify-themselves-by-a-web-address)), sends the person who is using it to pmsbridge to approve,
 and then exchanges the approval for access it can use. This section covers the approval step; the
 sections after it cover what the assistant receives and how you stop it. The page where assistants use their
 access to read PMS data arrives with the connection feature, so until then an assistant can finish connecting
@@ -321,7 +322,11 @@ page first and returns to the approval page afterwards.
 When an assistant asks for access, you see a page titled "Allow *name* to use pmsbridge?". Read it before you
 press anything:
 
-- **The name** is chosen by the assistant itself when it registers, and pmsbridge does not verify it. Anyone
+- **"This assistant is identified by *host*"** appears when the assistant named itself with a web address (see
+  [below](#assistants-that-identify-themselves-by-a-web-address)). That host is the verified part: pmsbridge
+  downloaded the assistant's details from it, so the details really are published by whoever controls that
+  host. Check that it belongs to the application you meant to connect.
+- **The name** is chosen by the assistant itself, and pmsbridge does not verify it. Anyone
   can register an assistant under any name, so a familiar name is not proof that it is the application you
   think it is.
 - **Where your browser goes back to** is shown in large type ("your browser goes back to *host*") with the full
@@ -338,6 +343,48 @@ press anything:
 **Allow access** sends your browser back to the assistant with a one-time approval that works for 5 minutes and
 once. **Cancel** sends it back with a refusal. Either way nothing is shared until you press the button, and
 doing nothing leaves nothing behind.
+
+### Assistants that identify themselves by a web address
+
+Current MCP assistants usually do not register. Instead the assistant gives a web address (an `https://`
+address such as `https://assistant.example.com/client.json`) as its client id, and the file at that address
+describes the assistant: its name and the addresses your browser may return to. pmsbridge advertises this
+(`client_id_metadata_document_supported`), and registration still works for assistants that use it.
+
+What pmsbridge does with such an address:
+
+- This feature needs outbound HTTPS (port 443) from the server to the internet; if the server cannot make
+  that connection, assistants that use a web address cannot connect (registration still works).
+- It downloads that one file when a signed-in person's approval request names the address, before the approval
+  page is shown, and it never downloads anything else on an assistant's behalf (the assistant's logo and other
+  links in the file are not fetched). Someone who is not signed in cannot make pmsbridge download anything:
+  they are sent to sign in first, and the download happens afterwards. This is the only request to the
+  internet that an assistant can cause, so it is tightly limited: only `https` on port 443, a real host name
+  (not a numeric address), an address of at most 1024 characters with no query or `;`, no redirects, at most
+  5 seconds and 16 KiB, a JSON answer with status 200, and the site's certificate must be valid for its name.
+- It refuses to contact private networks. The host name is looked up first, and if any answer is a private,
+  loopback, link-local (including the cloud metadata address), multicast, reserved or carrier-grade NAT
+  address, nothing is sent. The connection then goes only to the address that was checked. Because of this
+  rule an assistant hosted on your own private network cannot use a web address; it can still register.
+- It remembers the file for the time the site allows (between 5 minutes and 24 hours; 1 hour if the site says
+  nothing) and downloads it again at the next approval request after that. A failed or invalid download is
+  remembered for 5 minutes, so a broken address is not fetched again and again. Nothing from a failed answer
+  is kept.
+- It makes at most 30 downloads per hour for the whole installation, 5 per hour for one host and 10 per hour
+  for one signed-in person. Downloads also wait for each other for at most 5 seconds. Over a limit
+  the person sees "Too many assistant lookups just now"; waiting is the remedy. Until a person approves the
+  assistant, it is forgotten after 24 hours like a registered one, and it is downloaded again when needed.
+- The file must repeat its own address as `client_id`, give a `client_name` and the `redirect_uris` (checked
+  like registered ones), and must not hold a client secret or ask for a client login method: assistants of this
+  kind are public clients protected by PKCE. Anything else in the file is ignored.
+
+If the download fails, the person sees a page saying the assistant's web address could not be used (not found,
+not secure, too slow, redirected, too large, not JSON, or points to a network pmsbridge does not contact) and is
+not sent anywhere. The remedy is on the assistant's side: its publisher has to fix the file or the address.
+The **Assistants** page and the connected-apps page show an "Identified by" line with the host for these
+assistants. The client id shown for them is a short internal key (starting with `cimd_`); the
+[`oauth revoke-ai-access`](#the-command-oauth-revoke-ai-access) command accepts that key or the web address
+itself in `--client`.
 
 ### If the request itself is wrong
 
@@ -447,14 +494,16 @@ Administrators with server access can cancel approvals from the command line:
 
 ```bash
 docker compose -f deploy/compose.yaml exec app python -m pmsbridge.admin oauth revoke-ai-access --user person@example.com
-docker compose -f deploy/compose.yaml exec app python -m pmsbridge.admin oauth revoke-ai-access --client <client id>
-docker compose -f deploy/compose.yaml exec app python -m pmsbridge.admin oauth revoke-ai-access --user person@example.com --client <client id>
+docker compose -f deploy/compose.yaml exec app python -m pmsbridge.admin oauth revoke-ai-access --client=<client id>
+docker compose -f deploy/compose.yaml exec app python -m pmsbridge.admin oauth revoke-ai-access --user person@example.com --client=<client id>
 docker compose -f deploy/compose.yaml exec app python -m pmsbridge.admin oauth revoke-ai-access --all --yes
 ```
 
 - `--user` cancels every approval one person gave; `--client` cancels every approval given to one assistant
-  (each assistant's client id is shown on the Assistants page);
-  both together cancel only that person's approvals for that assistant.
+  (each assistant's client id is shown on the Assistants page; an assistant that uses a web address may also be
+  named by that address); both together cancel only that person's approvals for that assistant.
+  Write `--client=<client id>` with an equals sign: some older client ids begin with a minus sign, which the
+  command would otherwise take for an option.
 - `--all` cancels everything and needs `--yes`, because every assistant then has to be approved again. It
   cannot be combined with `--user` or `--client`.
 - At least one of `--user`, `--client` and `--all` is required.

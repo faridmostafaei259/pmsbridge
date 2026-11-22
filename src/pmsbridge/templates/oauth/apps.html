@@ -18,6 +18,9 @@
   <p class="muted">The name is chosen by the assistant itself. pmsbridge has not verified it.</p>
   <table>
     <tbody>
+      {% if item.identity_host %}
+      <tr><th>Identified by</th><td>{{ item.identity_host }}</td></tr>
+      {% endif %}
       <tr><th>Returns to</th><td>{{ item.hosts | join(", ") }}</td></tr>
       <tr><th>Approved</th><td>{{ item.approved_at.strftime("%Y-%m-%d %H:%M UTC") }}</td></tr>
       <tr><th>Last used</th><td>{{ item.last_used_at.strftime("%Y-%m-%d %H:%M UTC") if item.last_used_at else "never" }}</td></tr>

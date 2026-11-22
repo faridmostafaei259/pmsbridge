@@ -1,15 +1,25 @@
 """Database tables for the OAuth authorization server: clients, grants, codes and tokens.
 
-A *client* is an AI assistant that registered itself. A *grant* is one person's consent for one
-client, with the PMS connections the person allowed. An *authorization code* is the short-lived,
-single-use value the client exchanges for tokens. Codes and tokens are stored only as SHA-256
-hashes.
+A *client* is an AI assistant that registered itself, or one that named itself with a web address
+whose metadata document pmsbridge fetched (kind `metadata_document`, see `client_metadata.py`).
+A *grant* is one person's consent for one client, with the PMS connections the person allowed. An
+*authorization code* is the short-lived, single-use value the client exchanges for tokens. Codes
+and tokens are stored only as SHA-256 hashes.
 """
 
 from datetime import datetime
 from typing import Final
 
-from sqlalchemy import JSON, Boolean, CheckConstraint, ForeignKey, Index, Integer, String, false
+from sqlalchemy import (
+    JSON,
+    Boolean,
+    CheckConstraint,
+    ForeignKey,
+    Index,
+    Integer,
+    String,
+    false,
+)
 from sqlalchemy.orm import Mapped, mapped_column
 
 from pmsbridge.accounts.db import UtcDateTime
@@ -25,6 +35,7 @@ class OAuthClient(Base):
             "token_endpoint_auth_method IN ('none', 'client_secret_post', 'client_secret_basic')",
             name="auth_method",
         ),
+        Index("ix_oauth_clients_client_url", "client_url", unique=True),
     )
 
     client_id: Mapped[str] = mapped_column(String(64), primary_key=True)
@@ -37,6 +48,19 @@ class OAuthClient(Base):
     created_at: Mapped[datetime] = mapped_column(UtcDateTime)
     # Set when a person authorizes the client (and, later, when it uses a token).
     last_used_at: Mapped[datetime | None] = mapped_column(UtcDateTime, default=None)
+    # `dcr` (registered through /oauth/register) or `metadata_document` (the client id is a web
+    # address). A metadata-document client keeps a derived short `client_id` as its key, so grants,
+    # codes and tokens work unchanged; the address assistants use as client_id is `client_url`.
+    kind: Mapped[str] = mapped_column(String(20), default="dcr", server_default="dcr")
+    client_url: Mapped[str | None] = mapped_column(String(2048), default=None)
+    fetched_at: Mapped[datetime | None] = mapped_column(UtcDateTime, default=None)
+    # The document is used until this time; the next authorization request after it fetches again.
+    cache_until: Mapped[datetime | None] = mapped_column(UtcDateTime, default=None)
+
+    @property
+    def public_id(self) -> str:
+        """The client id the assistant itself uses (its web address, or the registered id)."""
+        return self.client_url or self.client_id
 
 
 class OAuthGrant(Base):

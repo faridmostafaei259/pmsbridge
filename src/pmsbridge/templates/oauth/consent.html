@@ -4,6 +4,13 @@
 <section class="card">
   <h1>Allow {{ client_name }} to use pmsbridge?</h1>
   <p class="muted">The name above is chosen by the application itself. pmsbridge has not verified it.</p>
+  {% if identity_host %}
+  <p class="redirect">
+    This assistant is identified by <strong class="host">{{ identity_host }}</strong>.
+    pmsbridge downloaded its details from that web address.
+  </p>
+  <p class="muted">Full address: <code>{{ client_address }}</code></p>
+  {% endif %}
   <p class="redirect">
     If you continue, your browser goes back to <strong class="host">{{ redirect_host }}</strong>.
   </p>

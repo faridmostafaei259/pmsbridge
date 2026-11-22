@@ -69,6 +69,7 @@ class Approval:
     last_used_at: datetime | None
     all_connections: bool
     connection_ids: tuple[str, ...]
+    identity_host: str | None = None  # the host of a web address client id (verified identity)
 
 
 async def list_approvals(user_id: int | None = None) -> tuple[list[Approval], bool]:
@@ -104,6 +105,7 @@ async def list_approvals(user_id: int | None = None) -> tuple[list[Approval], bo
                 last,
                 grant.all_connections,
                 ids,
+                redirect_host(client.client_url) if client.client_url else None,
             )
             continue
         newest_use = max((t for t in (before.last_used_at, last) if t is not None), default=None)
@@ -117,6 +119,7 @@ async def list_approvals(user_id: int | None = None) -> tuple[list[Approval], bo
             newest_use,
             before.all_connections or grant.all_connections,
             tuple(dict.fromkeys((*before.connection_ids, *ids))),
+            before.identity_host,
         )
     return list(merged.values()), truncated
 

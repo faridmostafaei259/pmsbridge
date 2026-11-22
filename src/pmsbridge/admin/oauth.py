@@ -1,11 +1,11 @@
 """AI assistant access, run in the container as `python -m pmsbridge.admin oauth <action>`.
 
-`revoke-ai-access [--user <email>] [--client <client_id>] [--all] [--yes]` cancels assistant
+`revoke-ai-access [--user <email>] [--client=<client_id>] [--all] [--yes]` cancels assistant
 approvals, which ends their access and refresh tokens at once:
 
 - `--user` cancels every approval one person gave;
 - `--client` cancels every approval given to one assistant (its client id is on the administrator
-  assistants page);
+  assistants page; an assistant that uses a web address may also be named by that address);
 - `--user` and `--client` together cancel only that person's approvals for that assistant;
 - `--all` cancels every approval of everyone and needs `--yes`, because every assistant then has
   to be approved again. It cannot be combined with the other selectors.
@@ -32,6 +32,7 @@ from pmsbridge.core import storage
 from pmsbridge.core.storage import session
 from pmsbridge.oauth import grants
 from pmsbridge.oauth.db import OAuthClient
+from pmsbridge.oauth.metadata_fetch import MAX_URL_LENGTH, is_url_client_id
 
 logger = logging.getLogger(__name__)
 
@@ -43,12 +44,13 @@ async def revoke_ai_access(*, email: str | None, client_id: str | None) -> str:
     storage.import_model_modules(storage.MODEL_MODULES)
     user_id = None if email is None else (await management.user_by_email(email)).id
     if client_id is not None:
+        by_address = is_url_client_id(client_id)  # an assistant's web address names its client
+        column = OAuthClient.client_url if by_address else OAuthClient.client_id
         async with session() as db:
-            known = await db.scalar(
-                select(OAuthClient.client_id).where(OAuthClient.client_id == client_id)
-            )
+            known = await db.scalar(select(OAuthClient.client_id).where(column == client_id))
         if known is None:
             raise management.ActionRefusedError("There is no assistant with this client id.")
+        client_id = known
     done = await grants.revoke_grants(user_id=user_id, client_id=client_id)
     logger.info(
         "admin oauth revoke-ai-access",
@@ -84,7 +86,10 @@ def _run_revoke(args: argparse.Namespace) -> int:
         return _usage_error("Choose who to cancel: --user, --client or --all.")
     if everyone and not args.yes:  # pyright: ignore[reportAny]
         return _usage_error("--all cancels every approval of everyone. Add --yes to confirm.")
-    if client_id is not None and not _CLIENT_ID.fullmatch(client_id):
+    if client_id is not None and not (
+        _CLIENT_ID.fullmatch(client_id)
+        or (is_url_client_id(client_id) and len(client_id) <= MAX_URL_LENGTH)
+    ):
         return _usage_error("The client id is not valid.")
     return run_action(lambda: revoke_ai_access(email=email, client_id=client_id))
 

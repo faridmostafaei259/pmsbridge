@@ -11,11 +11,12 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Final
 
-from sqlalchemy import and_, delete, or_
+from sqlalchemy import and_, delete, or_, select
 
 from pmsbridge.accounts.sessions import hash_token
 from pmsbridge.core.storage import session, write_transaction
 from pmsbridge.oauth.db import OAuthClient
+from pmsbridge.oauth.metadata_fetch import MAX_URL_LENGTH, is_url_client_id
 
 UNUSED_LIFETIME: Final = timedelta(hours=24)
 IDLE_LIFETIME: Final = timedelta(days=90)
@@ -53,11 +54,24 @@ def is_expired(client: OAuthClient, now: datetime) -> bool:
 
 
 async def get_client(client_id: str) -> OAuthClient | None:
-    """The live client with this id, or None (unknown, malformed or expired)."""
-    if not _CLIENT_ID_SHAPE.fullmatch(client_id):
+    """The live client with this id, or None (unknown, malformed or expired).
+
+    A web address finds a stored metadata-document client; nothing is fetched here (see
+    `client_metadata.py`). The short key of such a client is not accepted as an id: only the
+    address is, so a client whose document changed cannot be used under an older copy.
+    """
+    if is_url_client_id(client_id):
+        if len(client_id) > MAX_URL_LENGTH:
+            return None
+        async with session() as db:
+            client = await db.scalar(select(OAuthClient).where(OAuthClient.client_url == client_id))
+    elif _CLIENT_ID_SHAPE.fullmatch(client_id):
+        async with session() as db:
+            client = await db.get(OAuthClient, client_id)
+        if client is not None and client.client_url is not None:
+            client = None
+    else:
         return None
-    async with session() as db:
-        client = await db.get(OAuthClient, client_id)
     if client is None or is_expired(client, datetime.now(UTC)):
         return None
     return client
@@ -66,6 +80,9 @@ async def get_client(client_id: str) -> OAuthClient | None:
 async def create_client(data: RegistrationData) -> NewClient:
     """Store a client and drop expired ones. A secret is returned once and kept only as a hash."""
     client_id = secrets.token_urlsafe(24)
+    while client_id.startswith("-"):
+        # A leading "-" would be read as an option by the `--client <id>` command line.
+        client_id = secrets.token_urlsafe(24)
     secret = None if data.auth_method == "none" else secrets.token_urlsafe(32)
     now = datetime.now(UTC)
     async with write_transaction() as db:
