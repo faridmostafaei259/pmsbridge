@@ -111,7 +111,7 @@ Operator / Docker host  ------------------------------> everything above (full t
 | Malicious client registration or consent phishing (lookalike app names, attacker redirect URIs, flooding the registration endpoint) | Consent screen shows the client name and redirect host; exact redirect URI matching; registration rate limits; unused registrations expire | Planned |
 | Tampered pagination cursors | Cursors are opaque, never contain URLs or hosts, are parsed strictly and rejected when malformed | Planned |
 | Duplicate actions after timeouts (message sent twice) | Write operations are never retried automatically; unknown outcomes are reported to the client | Planned |
-| Compression side channels (BREACH) once the dashboard shows secrets next to reflected input | CSRF tokens are masked with a fresh random value per response, so compression cannot reveal them; pages also send `no-transform`. Caddy compresses responses (`encode`), so this is checked live at the accounts security review. Pages that show one-time secrets which cannot be masked (two-factor setup secrets, recovery codes) must not be compressed at all | Implemented (masking); to verify live |
+| Compression side channels (BREACH) once the dashboard shows secrets next to reflected input | Caddy does not compress responses at all, and CSRF tokens are also masked with a fresh random value per response | Implemented |
 
 ## Accepted risks and known gaps
 

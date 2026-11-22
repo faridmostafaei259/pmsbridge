@@ -1,12 +1,13 @@
-# Shared site body, imported by every Caddyfile.<mode>: limits, compression and the reverse
-# proxy to the app container.
+# Shared site body, imported by every Caddyfile.<mode>: limits and the reverse proxy to the app
+# container.
 (site_common) {
 	# Cap request bodies. Real requests to the gateway are small.
 	request_body {
 		max_size 2MB
 	}
 
-	encode zstd gzip
+	# No response compression: dashboard pages can show one-time secrets next to reflected input,
+	# and compression would expose them to BREACH-style attacks. The pages are small anyway.
 
 	# Readiness details are for the operator and the container health checks, not the internet.
 	@internal_only path /readyz

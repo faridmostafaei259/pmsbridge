@@ -252,3 +252,14 @@ def test_no_caddy_log_directive_exists_outside_the_global_options_block(name: st
         depth += line.count("{") - line.count("}")
         if global_block and depth == 0:
             global_block, global_done = False, True
+
+
+def test_caddy_does_not_compress_responses() -> None:
+    """Compression next to one-time secrets enables BREACH-style attacks; Caddy must not encode."""
+    caddy_dir = Path(__file__).resolve().parents[2] / "deploy" / "caddy"
+    for path in caddy_dir.glob("*.caddy"):
+        for line in path.read_text().splitlines():
+            assert not line.strip().startswith("encode"), f"{path.name} enables compression"
+    for path in caddy_dir.glob("Caddyfile.*"):
+        for line in path.read_text().splitlines():
+            assert not line.strip().startswith("encode"), f"{path.name} enables compression"
