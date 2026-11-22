@@ -14,6 +14,16 @@ You run it on your own Linux server. Your PMS credentials and data stay on that 
 - Ask about listings, reservations, calendars, guests, conversations, reviews, owners, payments and tasks.
 - Actions that change data (for example sending a guest message) are off by default and enabled per connection by an admin.
 
+## Your data stays yours
+
+pmsbridge runs on your server and connects to your own PMS account. It does not send any data to the people who
+make it: there is no telemetry, no analytics and no license check. Your PMS credentials and data stay on your
+server; what your AI assistant reads through pmsbridge goes to that assistant, under its provider's terms.
+
+You decide what the assistant may do. Actions that change data in your PMS (for example prices or guest messages)
+are off until an administrator turns them on, and you are responsible for how you use them. pmsbridge is provided
+as is, without warranty.
+
 ## Quick start
 
 A one-command installer for Linux servers is in development. See [docs/](docs/index.md) for progress.

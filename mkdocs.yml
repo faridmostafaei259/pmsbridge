@@ -20,3 +20,4 @@ nav:
       - adr/0006-distribution.md
       - adr/0007-tls-strategy.md
       - adr/0008-license.md
+      - adr/0009-no-data-collection.md
