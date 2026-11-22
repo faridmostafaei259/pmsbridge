@@ -19,6 +19,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Annotated, Literal, Union, get_args, get_origin
 
+from pydantic import SecretStr
+
 from pmsbridge.core.settings import Settings
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -114,6 +116,7 @@ PLAIN_TYPE_NAMES: dict[object, str] = {
     int: "whole number",
     bool: "yes or no",
     Path: "path",
+    SecretStr: "secret text",
 }
 
 
@@ -163,8 +166,8 @@ def render() -> str:
             "pmsbridge is configured with environment variables. You set them in a file named",
             "`.env` next to `deploy/compose.yaml`; the installer creates that file for you. The",
             "application reads nothing else: there is no other configuration file and no web page",
-            "for these settings. Never commit the `.env` file or share it, because later versions",
-            "keep secrets in it.",
+            "for these settings. Never commit the `.env` file or share it: it holds your",
+            "encryption keys.",
         ),
         "After you change `.env`, restart the stack so the change takes effect:",
         "```\ndocker compose -f deploy/compose.yaml up -d\n```",
@@ -186,6 +189,35 @@ def render() -> str:
                 *_setting_rows(),
             ]
         ),
+        "## Your encryption keys",
+        _paragraph(
+            "`ENCRYPTION_KEYS` protects the PMS credentials and tokens that pmsbridge stores.",
+            "The installer generates it. Back it up somewhere safe, away from the server (for",
+            "example in a password manager). If you lose it, the stored credentials cannot be",
+            "recovered and you would have to enter them again. Never share it.",
+        ),
+        _paragraph(
+            "Until the installer creates it for you, create the key yourself, once, with this",
+            "command (it adds one line to `deploy/.env`):",
+        ),
+        "```\n(umask 077; printf 'ENCRYPTION_KEYS=k1:%s\\n' \\\n"
+        '  "$(openssl rand -base64 32)" >> deploy/.env)\n```',
+        _paragraph(
+            "Then save that line in a password manager. `k1` is just a short name for the key",
+            "(letters and digits only). The `umask` makes the file readable only by you.",
+        ),
+        _paragraph(
+            "To replace the keys, run `pmsbridge rotate-keys`. It adds a new key at the front,",
+            "re-encrypts everything stored, and only then lets you remove the old key. Back up the",
+            "new `.env` afterwards.",
+        ),
+        _paragraph(
+            "Keep each retired key line for as long as you keep backups made before the rotation.",
+            "To restore such a backup, first add the retired key to `ENCRYPTION_KEYS`: copy only",
+            "the part after `ENCRYPTION_KEYS=` (the `<name>:<key>` part) and put it after the",
+            "active key, separated by a comma.",
+        ),
+        "```\nENCRYPTION_KEYS=k2:<new key>,k1:<old key>\n```",
         "## Stack settings",
         _paragraph(
             "These are read by the Docker Compose stack and Caddy, not by the application itself.",

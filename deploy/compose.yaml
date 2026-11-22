@@ -1,7 +1,8 @@
 # pmsbridge: Caddy (TLS) in front of the app.
 #
 # Settings come from a file named `.env` next to this file (never committed; the installer creates it).
-# Needed: DOMAIN, PUBLIC_BASE_URL, TLS_MODE (auto or internal) and, for `auto`, ACME_EMAIL.
+# Needed: DOMAIN, PUBLIC_BASE_URL, ENCRYPTION_KEYS (see docs/configuration.md), TLS_MODE (auto or
+# internal) and, for `auto`, ACME_EMAIL.
 # Optional: HTTP_PORT and HTTPS_PORT (host ports, default 80 and 443), ACME_CA (production or staging),
 # PMSBRIDGE_IMAGE and PMSBRIDGE_CADDY_IMAGE (default: images built from this checkout),
 # BACKEND_SUBNET and CADDY_BACKEND_IP (the private network and Caddy's fixed address on it),

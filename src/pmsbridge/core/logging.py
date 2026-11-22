@@ -53,6 +53,7 @@ SENSITIVE_KEY_PARTS: Final[tuple[str, ...]] = (
     "phone",
     "credential",
     "privatekey",
+    "encryptionkey",
 )
 
 # Exact key names that are never masked, although they contain a sensitive word. They carry counters
@@ -71,7 +72,7 @@ _STANDARD_RECORD_KEYS: Final = frozenset(
 
 _KEY_PATTERN: Final = (
     r"(?:password|passwd|passphrase|secret|token|authorization|api[_-]?key|cookie|e-?mail|phone"
-    r"|credential|private[_-]?key)"
+    r"|credential|private[_-]?key|encryption[_-]?keys?)"
 )
 _QUOTED_OR_BARE: Final = r"(?:\"[^\"]*\"|'[^']*'|[^\s,;\"'&}\]]+)"
 # name=value, name: value and "name": "value" (a quoted value may contain spaces), where the name
@@ -90,6 +91,9 @@ _LINE_RE: Final = re.compile(
     r"(?P<name>[\w.-]{0,40}(?:cookie|authorization))(?P<sep>[\"']?\s*[:=]\s*)(?P<value>[^\r\n]+)",
     re.IGNORECASE,
 )
+# An `ENCRYPTION_KEYS` entry (`<id>:<32 bytes in base64>`) is masked wherever it appears, so every
+# entry of a comma-separated list is covered, with or without spaces around the commas.
+_KEY_ENTRY_RE: Final = re.compile(r"(?<![\w+/])[a-z0-9]{1,16}:[A-Za-z0-9+/]{43}=")
 _BEARER_RE: Final = re.compile(r"\b(Bearer|Basic)\s+[A-Za-z0-9._~+/=-]{6,}", re.IGNORECASE)
 _EMAIL_RE: Final = re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+")
 
@@ -116,6 +120,7 @@ def scrub_text(text: str) -> str:
     truncated = len(text) > MAX_TEXT_LENGTH
     if truncated:
         text = text[:MAX_TEXT_LENGTH]
+    text = _KEY_ENTRY_RE.sub(REDACTED, text)
     text = _LINE_RE.sub(_mask_pair, text)
     text = _PAIR_RE.sub(_mask_pair, text)
     text = _BEARER_RE.sub(lambda m: f"{m[1]} {REDACTED}", text)

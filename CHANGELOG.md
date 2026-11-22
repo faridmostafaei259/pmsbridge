@@ -22,10 +22,13 @@ All notable changes to this project are documented here. The format follows
 - SQLite storage in WAL mode with private file permissions. Database migrations run automatically at start-up after an online backup (newest 5 kept). A failed or newer-version start leaves the database unchanged and explains how to recover.
 - Database readiness check on `/readyz`.
 - Generated configuration reference, including what to do if the application stops after an update.
+- Stored PMS credentials and tokens are encrypted with AES-256-GCM using versioned keys from the new `ENCRYPTION_KEYS` setting. Each value is bound to its own row and key header.
+- `python -m pmsbridge.admin keys status|reencrypt` shows which key each stored secret uses and re-encrypts everything under the active key. `status` refuses to confirm a rotation when no encrypted column is registered.
 
 ### Security
 - Strict default Content-Security-Policy, `X-Frame-Options: DENY`, `nosniff` and `no-referrer` headers; error responses never include stack traces.
 - Forwarded headers are trusted only from Caddy's fixed address on a private network.
 - Caddy and the application run as unprivileged users with all capabilities dropped and read-only root filesystems. The internal `/readyz` endpoint is blocked at the public edge, request bodies are capped at 2 MB, and only Caddy publishes ports.
 - Image scans in CI fail on fixable HIGH or CRITICAL findings. One known finding in the upstream Caddy binary is excepted until 2026-12-22.
+- Log redaction masks every `ENCRYPTION_KEYS` entry wherever it appears.
 - Database error messages and logs never include bound parameter values. A start-up failure is logged once as redacted JSON, never as a raw traceback.
