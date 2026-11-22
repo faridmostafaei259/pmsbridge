@@ -3,7 +3,7 @@
 # Base images are pinned by tag and digest and written out in the FROM lines (Dependabot cannot
 # update a reference that goes through a build argument). The Python image appears in two stages and
 # both lines must stay identical.
-FROM ghcr.io/astral-sh/uv:0.13.7@sha256:96f40d3904aad8d0bd010539001d36c8e2188b981e1334471a90c4a1d93bb490 AS uv
+FROM ghcr.io/astral-sh/uv:0.13.9@sha256:d3b601f0c7b118bc1753febf7c41cc80981df678445e0254284eecf84db79a7d AS uv
 
 # ---- Build stage: resolve and install dependencies from uv.lock into a virtualenv ----
 FROM python:3.12-slim-trixie@sha256:5e2bdb1b0d542d5039cffb8181c65930093949194a65c365dfb1b0fe13a4fa5b AS builder
