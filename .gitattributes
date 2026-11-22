@@ -1,0 +1,7 @@
+* text=auto eol=lf
+*.sh text eol=lf
+install.sh text eol=lf
+bin/pmsbridge text eol=lf
+*.png binary
+*.jpg binary
+*.ico binary
