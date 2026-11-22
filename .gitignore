@@ -1,0 +1,43 @@
+# Environment and secrets
+.env
+.env.*
+*.env
+*.pem
+*.key
+*.crt
+*.p12
+*.pfx
+*.jks
+certs/
+
+# Local data, databases and backups
+/data/
+backups/
+*.db
+*.db-*
+*.sqlite
+*.sqlite3
+*.sqlite-*
+*.tar.gz
+*.tar.gz.enc
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+dist/
+build/
+*.egg-info/
+
+# Docs build
+site/
+
+# Editors and OS
+.vscode/
+.idea/
+.DS_Store

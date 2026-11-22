@@ -1,0 +1,19 @@
+site_name: pmsbridge
+site_description: Self-hosted MCP gateway for property management systems
+repo_url: https://github.com/faridmostafaei259/pmsbridge
+docs_dir: docs
+theme:
+  name: material
+nav:
+  - Home: index.md
+  - Architecture: architecture.md
+  - Security model: security/threat-model.md
+  - Design decisions:
+      - adr/0001-architecture-overview.md
+      - adr/0002-single-company-instances.md
+      - adr/0003-sqlite-storage.md
+      - adr/0004-single-process-concurrency.md
+      - adr/0005-pms-abstraction.md
+      - adr/0006-distribution.md
+      - adr/0007-tls-strategy.md
+      - adr/0008-license.md
