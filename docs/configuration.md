@@ -31,6 +31,8 @@ address.
 | `DATABASE_PATH` | path | `<DATA_DIR>/pmsbridge.db` | no | The SQLite database file. |
 | `BACKUP_DIR` | path | `<DATA_DIR>/backups` | no | The folder for automatic backups taken before a database upgrade. |
 | `PRE_MIGRATION_BACKUPS_KEEP` | whole number | `5` | no | How many automatic pre-upgrade backups to keep. Older ones are deleted. |
+| `SESSION_IDLE_HOURS` | whole number | `12` | no | Sign staff out after this many hours without activity in the dashboard. |
+| `SESSION_MAX_DAYS` | whole number | `7` | no | Sign staff out this many days after they signed in, even if they stay active. |
 | `LOG_LEVEL` | one of `DEBUG`, `INFO`, `WARNING`, `ERROR`, `CRITICAL` | `INFO` | no | How much detail goes to the logs. Logs never contain passwords, tokens or guest details. |
 | `ENCRYPTION_KEYS` | secret text | none (development: optional) | yes | The keys that protect stored PMS credentials and tokens: comma-separated entries of the form `<id>:<key>`, where the key is 32 random bytes in base64. The first entry encrypts new data; later entries are old keys kept only to read older data. If you lose these keys, the stored credentials cannot be recovered, so back them up. Key rotation commands arrive with the `pmsbridge rotate-keys` host command in a later release; until then keep the single key. |
 
