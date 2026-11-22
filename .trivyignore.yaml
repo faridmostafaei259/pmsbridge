@@ -1,0 +1,11 @@
+# Scoped exceptions for the image scan of the Caddy image (see .github/workflows/ci.yml).
+#
+# CVE-2026-78661 is in golang.org/x/net (v0.60.0, fixed in 0.62.0), which is compiled into the
+# upstream `caddy` binary. Caddy 2.11.9 is the newest release, so it cannot be fixed here yet.
+# Wait for: a Caddy release built with golang.org/x/net 0.62.0 or newer. Then bump the Caddy image
+# in deploy/caddy/Dockerfile and delete this entry. The entry stops applying on its own on the date
+# below, so the scan fails again if the exception is forgotten.
+vulnerabilities:
+  - id: CVE-2026-78661
+    expired_at: 2026-12-22
+    statement: Compiled into the upstream Caddy binary; waiting for a Caddy release with a fixed golang.org/x/net.

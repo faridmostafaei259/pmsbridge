@@ -1,0 +1,128 @@
+# pmsbridge: Caddy (TLS) in front of the app.
+#
+# Settings come from a file named `.env` next to this file (never committed; the installer creates it).
+# Needed: DOMAIN, PUBLIC_BASE_URL, TLS_MODE (auto or internal) and, for `auto`, ACME_EMAIL.
+# Optional: HTTP_PORT and HTTPS_PORT (host ports, default 80 and 443), ACME_CA (production or staging),
+# PMSBRIDGE_IMAGE and PMSBRIDGE_CADDY_IMAGE (default: images built from this checkout),
+# BACKEND_SUBNET and CADDY_BACKEND_IP (the private network and Caddy's fixed address on it),
+# TRUSTED_PROXIES (default: Caddy's address).
+
+name: pmsbridge
+
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "5"
+
+services:
+  app:
+    image: ${PMSBRIDGE_IMAGE:-pmsbridge:local}
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    env_file: ${PMSBRIDGE_ENV_FILE:-.env}
+    environment:
+      # Forwarded headers are trusted only from Caddy's fixed address on the private network, not
+      # from the whole subnet (which also contains the host's gateway address).
+      TRUSTED_PROXIES: ${TRUSTED_PROXIES:-${CADDY_BACKEND_IP:-172.31.250.10}}
+    volumes:
+      - app_data:/data
+    networks:
+      - backend
+    read_only: true
+    tmpfs:
+      - /tmp:size=16m,mode=1777
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    stop_grace_period: 30s
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/healthz', timeout=3)"
+      interval: 30s
+      timeout: 5s
+      start_period: 20s
+      retries: 3
+    logging: *default-logging
+
+  caddy:
+    image: ${PMSBRIDGE_CADDY_IMAGE:-pmsbridge-caddy:local}
+    build:
+      context: ./caddy
+      dockerfile: Dockerfile
+    # Runs as the fixed non-root user. Ports 80 and 443 are below the usual unprivileged range, so
+    # this container (and only this one) lowers the start of that range to 0.
+    user: "10001:10001"
+    sysctls:
+      net.ipv4.ip_unprivileged_port_start: 0
+    restart: unless-stopped
+    depends_on:
+      app:
+        condition: service_healthy
+    command:
+      - caddy
+      - run
+      - --config
+      - /etc/caddy/Caddyfile.${TLS_MODE:-auto}
+      - --adapter
+      - caddyfile
+    environment:
+      DOMAIN: ${DOMAIN:?Set DOMAIN in the .env file (for example mcp.example.com)}
+      ACME_EMAIL: ${ACME_EMAIL:-}
+      ACME_CA: ${ACME_CA:-production}
+    ports:
+      - "${HTTP_PORT:-80}:80"
+      - "${HTTPS_PORT:-443}:443"
+    volumes:
+      # The Z label lets the container read the files on hosts with SELinux enforcing. It is
+      # ignored elsewhere.
+      - ./caddy:/etc/caddy:ro,Z
+      # Certificates and the ACME account live in this volume, so restarts and updates never
+      # request new certificates.
+      - caddy_data:/data
+      - caddy_config:/config
+    networks:
+      backend:
+        ipv4_address: ${CADDY_BACKEND_IP:-172.31.250.10}
+    read_only: true
+    tmpfs:
+      - /tmp:size=16m,mode=1777
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      # The admin endpoint is only reachable inside the container.
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:2019/config/"]
+      interval: 30s
+      timeout: 5s
+      start_period: 15s
+      retries: 3
+    logging: *default-logging
+
+# A private network shared by caddy and app. It is not marked `internal` because both containers
+# need outbound access: the app calls the PMS APIs and Caddy talks to the certificate authority.
+# Only caddy publishes ports. The subnet and Caddy's address are fixed so the app can trust
+# forwarded headers from exactly one address. The network is IPv4-only on purpose: one fixed address
+# keeps that trust rule simple. Known limitation: IPv6 visitors reach Caddy through docker-proxy,
+# which rewrites their source address, so the app sees every IPv6 visitor as the bridge gateway
+# address (IPv4 visitors keep their own address). A dual-stack option is planned.
+# If the default subnet clashes with a network you use (for example the AWS default VPC range
+# 172.31.0.0/16, which shows up as "Pool overlaps with other one on this address space"), set
+# BACKEND_SUBNET and CADDY_BACKEND_IP in .env (the address must lie inside the subnet).
+networks:
+  backend:
+    ipam:
+      config:
+        - subnet: ${BACKEND_SUBNET:-172.31.250.0/24}
+
+volumes:
+  app_data:
+  caddy_data:
+  caddy_config:

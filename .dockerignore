@@ -1,0 +1,12 @@
+# Allow-list: deny everything, then allow only what the image build needs.
+*
+
+!src/
+!pyproject.toml
+!uv.lock
+!README.md
+!LICENSE
+
+# Never ship compiled files or caches from a local checkout.
+**/__pycache__
+**/*.py[cod]

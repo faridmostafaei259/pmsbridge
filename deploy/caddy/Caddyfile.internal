@@ -1,0 +1,25 @@
+# TLS_MODE=internal: Caddy signs the certificate with its own private authority.
+# For local testing and CI only. AI apps and browsers do not trust these certificates.
+# No HSTS here: the certificate is not publicly trusted.
+# Environment: DOMAIN (required).
+{
+	local_certs
+	skip_install_trust
+	# HTTP/3 needs UDP 443, which the stack does not publish.
+	servers {
+		protocols h1 h2
+	}
+	# Runtime logs as JSON on stdout. Access logs stay off because request URLs can carry
+	# one-time OAuth values. The admin API (used by the container health check) is not logged.
+	log {
+		output stdout
+		format json
+		exclude admin.api
+	}
+}
+
+import /etc/caddy/site.caddy
+
+{$DOMAIN} {
+	import site_common
+}

@@ -1,0 +1,28 @@
+# Shared site body, imported by every Caddyfile.<mode>: limits, compression and the reverse
+# proxy to the app container.
+(site_common) {
+	# Cap request bodies. Real requests to the gateway are small.
+	request_body {
+		max_size 2MB
+	}
+
+	encode zstd gzip
+
+	# Readiness details are for the operator and the container health checks, not the internet.
+	@internal_only path /readyz
+	handle @internal_only {
+		respond "Not found" 404
+	}
+
+	handle {
+		reverse_proxy app:8000 {
+			# Stream responses as they are produced (MCP uses streamed responses).
+			flush_interval -1
+			transport http {
+				dial_timeout 5s
+			}
+		}
+	}
+
+	header -Server
+}

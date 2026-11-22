@@ -1,0 +1,28 @@
+# TLS_MODE=auto: Caddy gets and renews a publicly trusted certificate for DOMAIN by itself.
+# Needs DOMAIN pointing at this server and ports 80 and 443 reachable from the internet.
+# Environment: DOMAIN (required), ACME_EMAIL (required), ACME_CA (production, the default,
+# or staging).
+{
+	email {$ACME_EMAIL}
+	# Empty file for production (Caddy's default authorities), the staging URL for staging.
+	import /etc/caddy/acme/{$ACME_CA:production}.caddy
+	# HTTP/3 needs UDP 443, which the stack does not publish.
+	servers {
+		protocols h1 h2
+	}
+	# Runtime logs as JSON on stdout. Access logs stay off because request URLs can carry
+	# one-time OAuth values. The admin API (used by the container health check) is not logged.
+	log {
+		output stdout
+		format json
+		exclude admin.api
+	}
+}
+
+import /etc/caddy/site.caddy
+
+{$DOMAIN} {
+	# A publicly trusted certificate is in use, so browsers may be told to insist on HTTPS.
+	header Strict-Transport-Security "max-age=31536000"
+	import site_common
+}

@@ -1,0 +1,187 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# Least privilege: the jobs only read the repository.
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  IMAGE_TAG: pmsbridge:ci
+  CADDY_IMAGE_TAG: pmsbridge-caddy:ci
+
+jobs:
+  checks:
+    name: Lint, types and tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          enable-cache: true
+
+      - name: Install dependencies (the lock file must be up to date)
+        run: |
+          uv lock --check
+          uv sync --frozen
+
+      - name: Ruff lint
+        run: uv run ruff check .
+
+      - name: Ruff format
+        run: uv run ruff format --check .
+
+      - name: Pyright
+        run: uv run pyright
+
+      - name: Tests
+        run: uv run pytest -q
+
+      - name: Shellcheck
+        run: |
+          # Every tracked file named *.sh, plus extensionless scripts (bin/, libexec/ and
+          # others) recognised by a shell shebang.
+          scripts=()
+          while IFS= read -r -d '' file; do
+            [ -f "$file" ] && [ ! -L "$file" ] || continue
+            case "$file" in
+              *.sh) scripts+=("$file") ;;
+              *) if head -n 1 "$file" | grep -aEq '^#!.*\b(ba|da|k)?sh\b'; then scripts+=("$file"); fi ;;
+            esac
+          done < <(git ls-files -z)
+          if [ "${#scripts[@]}" -eq 0 ]; then
+            echo "No shell scripts found."
+          else
+            printf 'Checking %s\n' "${scripts[@]}"
+            uv run shellcheck "${scripts[@]}"
+          fi
+
+      - name: No emojis
+        run: uv run python scripts/check_no_emoji.py
+
+      - name: Generated docs are up to date
+        run: |
+          check_generated() {
+            local script="$1" doc="$2"
+            if [ -f "$script" ]; then
+              uv run python "$script" --check
+            elif [ -f "$doc" ]; then
+              echo "$doc exists but its generator $script is missing."
+              return 1
+            else
+              echo "Skipping $doc: no generator yet."
+            fi
+          }
+          check_generated scripts/gen_tool_docs.py docs/tools.md
+          check_generated scripts/gen_config_docs.py docs/configuration.md
+
+      - name: Dependency audit (locked dependencies, runtime and development)
+        run: |
+          uv export --frozen --no-emit-project --format requirements-txt \
+            --output-file "$RUNNER_TEMP/requirements.txt"
+          uv run pip-audit --requirement "$RUNNER_TEMP/requirements.txt" --require-hashes --disable-pip
+
+  image:
+    name: Image build, scan and smoke test
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Build the application image
+        run: docker build --tag "$IMAGE_TAG" .
+
+      - name: Prepare settings for the compose checks
+        run: |
+          printf 'PUBLIC_BASE_URL=https://localhost:8443\n' > "$RUNNER_TEMP/service.env"
+          {
+            echo "DOMAIN=localhost"
+            echo "TLS_MODE=internal"
+            echo "HTTP_PORT=8080"
+            echo "HTTPS_PORT=8443"
+            echo "PMSBRIDGE_IMAGE=$IMAGE_TAG"
+            echo "PMSBRIDGE_CADDY_IMAGE=$CADDY_IMAGE_TAG"
+            echo "PMSBRIDGE_ENV_FILE=$RUNNER_TEMP/service.env"
+          } > "$RUNNER_TEMP/compose.env"
+
+      - name: Validate the compose file
+        run: docker compose --env-file "$RUNNER_TEMP/compose.env" -f deploy/compose.yaml config --quiet
+
+      - name: Build the Caddy image
+        run: docker compose --env-file "$RUNNER_TEMP/compose.env" -f deploy/compose.yaml build caddy
+
+      - name: Scan the application image (fail on fixable HIGH or CRITICAL findings)
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: ${{ env.IMAGE_TAG }}
+          format: table
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          vuln-type: os,library
+          exit-code: "1"
+
+      # The one accepted finding is listed, with an expiry date, in .trivyignore.yaml. It is a flaw
+      # inside the upstream Caddy binary that only a new Caddy release can fix.
+      - name: Scan the Caddy image (fail on fixable HIGH or CRITICAL findings)
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: ${{ env.CADDY_IMAGE_TAG }}
+          format: table
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          vuln-type: os,library
+          trivyignores: .trivyignore.yaml
+          exit-code: "1"
+
+      - name: Smoke test (internal TLS on high ports)
+        timeout-minutes: 5
+        run: |
+          compose=(docker compose --env-file "$RUNNER_TEMP/compose.env" -f deploy/compose.yaml)
+          "${compose[@]}" up --detach --no-build --wait
+
+          fail() { echo "FAILED: $1" >&2; exit 1; }
+
+          body="$(curl --fail --silent --show-error --insecure https://localhost:8443/healthz)"
+          [ "$body" = '{"status":"ok"}' ] || fail "unexpected /healthz body: $body"
+
+          headers="$(curl --silent --insecure --dump-header - --output /dev/null \
+            https://localhost:8443/healthz | tr -d '\r')"
+          for name in x-content-type-options referrer-policy x-frame-options content-security-policy; do
+            grep -iq "^$name:" <<<"$headers" || fail "missing response header $name"
+          done
+          if grep -iq '^strict-transport-security:' <<<"$headers"; then
+            fail "HSTS must not be sent in internal mode"
+          fi
+
+          readyz="$(curl --silent --insecure --output /dev/null --write-out '%{http_code}' \
+            https://localhost:8443/readyz)"
+          [ "$readyz" = "404" ] || fail "/readyz through Caddy returned $readyz, expected 404"
+
+          redirect="$(curl --silent --output /dev/null --write-out '%{http_code}' \
+            http://localhost:8080/healthz)"
+          [ "$redirect" = "308" ] || fail "HTTP returned $redirect, expected a 308 redirect"
+
+          trusted="$("${compose[@]}" exec -T app printenv TRUSTED_PROXIES)"
+          [ "$trusted" = "172.31.250.10" ] || fail "TRUSTED_PROXIES is $trusted"
+          echo "Smoke test passed."
+
+      - name: Show container logs on failure
+        if: failure()
+        run: docker compose --env-file "$RUNNER_TEMP/compose.env" -f deploy/compose.yaml logs --no-color
+
+      - name: Stop the stack
+        if: always()
+        run: docker compose --env-file "$RUNNER_TEMP/compose.env" -f deploy/compose.yaml down --volumes

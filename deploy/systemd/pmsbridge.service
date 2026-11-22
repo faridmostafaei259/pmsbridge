@@ -1,0 +1,28 @@
+# Optional: starts the pmsbridge stack at boot and lets `systemctl start|stop|restart pmsbridge` manage it.
+#
+# The containers already use `restart: unless-stopped`, so Docker brings them back after a reboot
+# even without this unit. Install it only if you prefer to manage the stack through systemd.
+#
+# The unit expects the install in /opt/pmsbridge (compose file at /opt/pmsbridge/deploy/compose.yaml
+# and settings in /opt/pmsbridge/deploy/.env). For another location, run `systemctl edit pmsbridge`
+# and override WorkingDirectory= (and ConditionPathExists=).
+[Unit]
+Description=pmsbridge (Docker Compose stack)
+Documentation=https://github.com/faridmostafaei259/pmsbridge
+Requires=docker.service
+After=docker.service network-online.target
+Wants=network-online.target
+ConditionPathExists=/opt/pmsbridge/deploy/compose.yaml
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+WorkingDirectory=/opt/pmsbridge/deploy
+ExecStart=/usr/bin/docker compose -f compose.yaml up -d --remove-orphans --wait
+ExecReload=/usr/bin/docker compose -f compose.yaml up -d --remove-orphans --wait
+ExecStop=/usr/bin/docker compose -f compose.yaml stop
+TimeoutStartSec=300
+TimeoutStopSec=120
+
+[Install]
+WantedBy=multi-user.target
