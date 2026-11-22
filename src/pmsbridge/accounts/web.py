@@ -13,7 +13,7 @@ from starlette.requests import Request
 from starlette.responses import RedirectResponse, Response
 from starlette.staticfiles import StaticFiles
 
-from pmsbridge.accounts import csrf, passwords, security, setup, twofactor
+from pmsbridge.accounts import csrf, passwords, security, setup, twofactor, users_page
 from pmsbridge.accounts.auth import (
     LOGIN_COOKIE,
     LOGIN_COOKIE_SECONDS,
@@ -33,6 +33,7 @@ from pmsbridge.accounts.db import User
 from pmsbridge.accounts.flows import attach_session, flow_redirect, start_flow
 from pmsbridge.accounts.pages import STATIC_DIR, render
 from pmsbridge.accounts.ratelimit import LoginLimiter, client_address_key
+from pmsbridge.accounts.reauth import forget_confirmation
 from pmsbridge.accounts.service import InvalidEmailError, find_user_by_email, normalise_email
 from pmsbridge.accounts.sessions import end_session
 from pmsbridge.core.settings import get_settings
@@ -186,6 +187,7 @@ def register(app: FastAPI) -> None:
     app.state.login_limiter = limiter
     setup.register_routes(app)
     security.register_routes(app)
+    users_page.register_routes(app)
     app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
     @app.exception_handler(NotAuthenticated)
@@ -226,7 +228,9 @@ def register(app: FastAPI) -> None:
         response = RedirectResponse("/login", 303)
         if await current_user_or_none(request) is not None:
             await verify_csrf(request, await read_form(request))
-            await end_session(request.cookies.get(SESSION_COOKIE, ""))
+            token = request.cookies.get(SESSION_COOKIE, "")
+            await end_session(token)
+            forget_confirmation(request, token)
             clear_cookie(response, SESSION_COOKIE, samesite="lax")
         elif csrf.origin_allowed(request, get_settings().public_base_url):
             # No live session: only tidy up a stale cookie, and only for a request from this site.

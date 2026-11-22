@@ -22,6 +22,7 @@ from pmsbridge.accounts import twofactor
 from pmsbridge.accounts.auth import LOGIN_COOKIE, SESSION_COOKIE
 from pmsbridge.accounts.db import AuthFlow, RecoveryCode, Session, User, UserTotp
 from pmsbridge.accounts.flows import FLOW_COOKIE
+from pmsbridge.accounts.security import locked_message
 from pmsbridge.accounts.service import create_user, find_user_by_email
 from pmsbridge.core.settings import clear_settings_cache
 from pmsbridge.core.storage import session, write_transaction
@@ -425,3 +426,11 @@ async def test_twenty_wrong_codes_in_a_day_lock_the_person_out_for_the_day(
     assert int(refused.headers["retry-after"]) > twofactor.CODE_WINDOW_SECONDS  # a day, not 15 min
     await sign_in(client, EMAIL, PASSWORD)
     assert (await verify(client, current_code(secret))).status_code == 429
+
+
+def test_the_lockout_message_states_the_real_wait() -> None:
+    assert locked_message(900) == "Too many wrong codes. Try again in about 15 minutes."
+    assert locked_message(30) == "Too many wrong codes. Try again in about 1 minute."
+    assert locked_message(24 * 3600) == "Too many wrong codes. Try again in about 24 hours."
+    assert locked_message(3601) == "Too many wrong codes. Try again in about 2 hours."
+    assert "15 minutes" not in locked_message(24 * 3600)

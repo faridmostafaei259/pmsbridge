@@ -48,6 +48,8 @@ class User(Base):
     __table_args__ = (
         CheckConstraint("role IN ('admin', 'staff')", name="role"),
         CheckConstraint("is_active IN (0, 1)", name="is_active"),
+        # An id is never given out twice, so a cancelled invitation's id cannot reach a new person.
+        {"sqlite_autoincrement": True},
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
@@ -78,14 +80,14 @@ class Session(Base):
 
 
 class OneTimeToken(Base):
-    """A setup or reset link. Only the SHA-256 is stored; one live link per person and purpose."""
+    """A setup, invite or reset link. Only the SHA-256 is stored; one live link per purpose."""
 
     __tablename__ = "one_time_tokens"
     __table_args__ = (UniqueConstraint("user_id", "purpose"),)
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
-    purpose: Mapped[str] = mapped_column(String(16))  # "setup" or "reset"
+    purpose: Mapped[str] = mapped_column(String(16))  # "setup", "reset" or "invite"
     token_hash: Mapped[str] = mapped_column(String(64), unique=True)
     created_at: Mapped[datetime] = mapped_column(UtcDateTime)
     expires_at: Mapped[datetime] = mapped_column(UtcDateTime)
@@ -94,8 +96,9 @@ class OneTimeToken(Base):
 class AuthFlow(Base):
     """A short-lived server-side state for a multi-step page flow, found by a `__Host-` cookie.
 
-    Kinds: `setup` and `reset` (after a link was opened), `second_factor` (password accepted, code
-    still needed), `enroll` (an administrator without two-factor must enroll) and `enable`.
+    Kinds: `setup`, `invite` and `reset` (after a link was opened), `second_factor` (password
+    accepted, code still needed), `enroll` (an administrator without two-factor must enroll) and
+    `enable`.
     """
 
     __tablename__ = "auth_flows"

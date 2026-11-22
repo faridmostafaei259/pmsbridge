@@ -10,8 +10,10 @@ import pytest
 from argon2 import PasswordHasher
 from fastapi import FastAPI
 from httpx import ASGITransport
+from sqlalchemy import update
 
 from pmsbridge.accounts import passwords, totp, twofactor
+from pmsbridge.accounts.db import UserTotp
 from pmsbridge.accounts.service import create_user
 from pmsbridge.app import create_app
 from pmsbridge.core.crypto import generate_key
@@ -138,3 +140,19 @@ async def post_form(
     return await client.post(
         path, data={**data, "csrf_token": page_token(html)}, headers={"Origin": BASE_URL}
     )
+
+
+async def rewind_codes(user: int) -> None:
+    """Forget the newest accepted code step, so the current code can be used again in a test."""
+    async with write_transaction() as db:
+        await db.execute(update(UserTotp).where(UserTotp.user_id == user).values(last_step=0))
+
+
+async def sign_in_with_code(
+    client: httpx.AsyncClient, user: int, secret: bytes, email: str, password: str = PASSWORD
+) -> None:
+    """Sign in through both steps and leave the code step reusable."""
+    await sign_in(client, email, password)
+    response = await post_form(client, "/login/verify", {"code": current_code(secret)})
+    assert response.status_code == 303
+    await rewind_codes(user)

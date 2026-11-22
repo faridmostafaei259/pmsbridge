@@ -1,0 +1,13 @@
+{% extends "base.html" %}
+{% block title %}Invitation ready - pmsbridge{% endblock %}
+{% block content %}
+<section class="card">
+  <h1>Invitation ready</h1>
+  <p>Send this link to the person you invited ({{ "an administrator" if role == "admin" else "staff" }}). It works once and ends after 72 hours. It is shown only now: if you lose it, invite the same address again to get a new one.</p>
+  <p><code class="secret">{{ link }}</code></p>
+  {% if role == "admin" %}
+  <p>An administrator must also set up two-factor sign-in before the account becomes active.</p>
+  {% endif %}
+  <p><a href="/admin/users">Back to users</a></p>
+</section>
+{% endblock %}

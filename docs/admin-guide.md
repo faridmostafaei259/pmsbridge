@@ -27,7 +27,8 @@ A session ends in whichever of these happens first:
 | Time since you signed in, even if you stay active | 7 days | `SESSION_MAX_DAYS` |
 
 Closing the browser usually ends the session too, because the cookie is not given an expiry date. (A browser set to "continue where you left off" may keep it.) A session will also end when
-an administrator disables your account (disabling accounts arrives with user management). Every sign-in starts a new session: a session from an earlier sign-in
+an administrator disables your account, resets your two-factor sign-in or makes you an administrator (see
+[Managing people](#managing-people)). Every sign-in starts a new session: a session from an earlier sign-in
 is never reused. See [Configuration](configuration.md) to change the two settings.
 
 ### "Email or password is incorrect"
@@ -37,7 +38,7 @@ wrong, so nobody can use the sign-in page to find out which email addresses have
 
 - the password is wrong, or the email address has a typo;
 - there is no account for that email address;
-- the account has been disabled by an administrator (disabling accounts arrives with user management).
+- the account has been disabled by an administrator, or the invitation has not been accepted yet.
 
 If you are sure you typed both correctly, ask an administrator to check that your account exists and is
 active.
@@ -162,7 +163,7 @@ password managers and most standalone apps do.
 |---|---|
 | "That code is not correct." although you typed what the app shows | The clock of your phone or of the server is off by more than about 30 seconds. Set the phone to automatic date and time. On the server, keep time synchronisation on (for example `timedatectl` should report the clock as synchronised). A code from the previous or next 30-second step is also accepted, but no more. |
 | The same code is refused a second time | Each code works once. Wait for the app to show the next one. |
-| "Too many wrong codes. Wait 15 minutes and try again." | See the limits above. A correct code does not help while the pause lasts. |
+| "Too many wrong codes. Try again in about 15 minutes." | See the limits above. A correct code does not help while the pause lasts. The message gives the real wait: after 20 wrong codes in a day it says about 24 hours. |
 | A server error (or "no usable encryption key") at the code step or when setting up | `ENCRYPTION_KEYS` in `.env` is missing, or no longer holds the key that was active when the authenticator was set up. Restore the correct key line and restart. Recovery codes still work in the meantime, because they do not need the key. |
 | Wrong password or code on **Account security** | Mistakes there (turning two-factor off, making new recovery codes) count towards the same limits as the code step at sign-in. |
 
@@ -180,12 +181,124 @@ letters is fine.
 
 - **You have a recovery code:** at the code step, enter a recovery code instead. It works once. Then open
   **Account security** and make new recovery codes. To move to a new phone, turn two-factor sign-in off and
-  on again. Staff can do this themselves; administrators cannot turn it off, so they will ask another
-  administrator to reset it once user management arrives.
-- **You have no recovery code:** another administrator has to reset your two-factor sign-in. That action
-  (`users reset-2fa`) arrives with user management in the next release and is not available yet. Until then
-  there is no supported way back in, so store your recovery codes safely when you first see them.
+  on again. Staff can do this themselves; administrators cannot turn it off, so they ask another
+  administrator to reset it (see [Resetting two-factor sign-in](#resetting-two-factor-sign-in)).
+- **You have no recovery code:** another administrator resets your two-factor sign-in, and you set it up again
+  at your next sign-in. If you are the only administrator, use the command-line recovery below.
 
-## Creating accounts
+## Managing people
 
-Inviting people, roles, and disabling accounts are not available yet and will be described here when they are.
+Administrators manage accounts on the **Users** page (the **Users** link at the top of every page, visible to
+administrators only; staff who open the address get "Only an administrator can do this").
+
+The page shows, for each person (the first 500, with a note if there are more; `users list` does the same):
+email address, role, status, whether two-factor sign-in is on, and the last
+sign-in. Status is one of:
+
+- **active**: can sign in;
+- **disabled**: cannot sign in, and every session has ended;
+- **pending**: has not finished setting up the account (password and, for administrators, two-factor
+  sign-in). Pending people are listed again under *Pending invitations*.
+
+### Roles
+
+| | Staff | Administrator |
+|---|---|---|
+| Sign in with a password | yes | yes, always with a two-factor code |
+| Two-factor sign-in | optional | required |
+| Users page, invitations, disabling | no | yes |
+
+Use **Make administrator** or **Make staff** on the Users page. Making someone an administrator signs them out
+everywhere, so that the two-factor rule applies at their next sign-in: they are taken to the setup page and get
+no session until it is done.
+
+### Inviting a person
+
+1. On the Users page, enter the email address, choose **Staff** or **Administrator**, and select **Invite**.
+2. The page shows a one-time link such as `https://mcp.example.com/invite?token=...`. **Nothing is sent by
+   email.** Copy the link and send it to the person yourself. It is shown once: if you lose it, invite the same
+   address again, which gives a new link and cancels the old one.
+3. The person opens the link and chooses a password. An invited administrator also sets up two-factor sign-in
+   and saves recovery codes, the same steps as in [First sign-in](#first-sign-in-the-setup-link). The account
+   becomes active only when the last step is done.
+
+The link works once and ends after 72 hours (it must still be valid when the person finishes). Anyone who has
+the link can set up the account, so send it only to the person it is for. To cancel an invitation, select
+**Cancel invitation** under *Pending invitations*. An address that already has an active or disabled account
+cannot be invited; turn a disabled account on again instead.
+
+From the command line:
+
+```bash
+docker compose -f deploy/compose.yaml exec app python -m pmsbridge.admin users invite --email person@example.com --role staff
+```
+
+This prints only the link. `--role` is `staff` or `admin`.
+
+### Disabling and turning accounts on again
+
+**Disable** ends every session and every half-finished sign-in of the person at once, and they can no longer
+sign in. It also cancels any setup or password-reset link that is still open for them. Nothing else about the
+account changes. **Turn on** makes the account usable again (with the old
+password and, if they had it, the old two-factor setup).
+
+### Resetting two-factor sign-in
+
+**Reset two-factor** deletes the person's authenticator and recovery codes and signs them out everywhere.
+Staff can then sign in with the password alone and turn it on again if they wish. An administrator must set it
+up again at their next sign-in: they are taken to the setup page straight after the password step.
+If that setup page says "Too many wrong codes", the person made too many wrong code attempts earlier. Restart the
+application, which clears these in-memory limits, then sign in again:
+
+```bash
+docker compose -f deploy/compose.yaml restart app
+```
+
+### Safety rules
+
+- You cannot disable, demote or reset the two-factor sign-in of **your own** account on the Users page. Ask
+  another administrator.
+- The **last active administrator** cannot be disabled or demoted. Make someone else an administrator first.
+- Disabled and pending accounts do not count as administrators for that rule.
+
+### Confirming it is you
+
+Inviting, disabling, turning on, resetting two-factor and changing roles ask you to confirm your **password and
+a current two-factor code** first. One confirmation covers the next 10 minutes in the same browser session;
+after that you are asked again. Mistakes on this form count towards the same limits as the code step at
+sign-in (see [Two-factor sign-in](#two-factor-sign-in)). Cancelling an invitation does not ask.
+
+### Command-line actions
+
+The same actions are available inside the container, where they need no sign-in because they run with access
+to the server:
+
+```bash
+docker compose -f deploy/compose.yaml exec app python -m pmsbridge.admin users list
+docker compose -f deploy/compose.yaml exec app python -m pmsbridge.admin users disable --email person@example.com
+docker compose -f deploy/compose.yaml exec app python -m pmsbridge.admin users enable --email person@example.com
+docker compose -f deploy/compose.yaml exec app python -m pmsbridge.admin users reset-2fa --email person@example.com
+```
+
+`list` prints a table. The others print one confirmation line. The last-administrator rule applies to
+`disable`; the "your own account" rule does not exist here, because nobody is signed in. An exit code of 1
+means the action was refused (the message says why), 2 means bad input or a problem with the settings or the
+database.
+
+#### An administrator who lost their phone and recovery codes
+
+If no other administrator can sign in to reset it, reset it from the server:
+
+```bash
+docker compose -f deploy/compose.yaml exec app python -m pmsbridge.admin users reset-2fa --email you@example.com
+```
+
+This is allowed even for the only administrator. Then sign in with the password: the page takes you to the
+two-factor setup, and shows new recovery codes. If the setup page says "Too many wrong codes", restart the
+application with `docker compose -f deploy/compose.yaml restart app` (this clears the in-memory limits) and sign
+in again. If you also forgot the password, run
+`users reset-admin-password` first. Anyone who can run these commands already controls the server, so keep
+access to it limited.
+
+**What exists today.** As for `create-admin`, the `python -m pmsbridge.admin` entry point and the host
+command `pmsbridge users` arrive with the installer and command-line tool.

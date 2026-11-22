@@ -29,6 +29,9 @@ All notable changes to this project are documented here. The format follows
 - Administrator guide covering signing in, session lifetime, sign-in lockouts and troubleshooting.
 - One-time setup link for the first administrator (`users create-admin`) and a password-reset link for administrators (`users reset-admin-password`). Links work once, expire after 24 hours and are stored only as hashes.
 - Two-factor sign-in with authenticator apps (TOTP), required for administrators and optional for staff on the new Account security page, with single-use recovery codes.
+- Invite staff and administrators from the dashboard with a one-time link that works once and ends after 72 hours (no e-mail is sent).
+- Users page for administrators: list people, invite, cancel invitations, disable and enable accounts, reset two-factor sign-in and change roles. Sensitive actions ask for the administrator's password and a current code, valid for 10 minutes.
+- Admin commands `users list`, `users invite`, `users disable`, `users enable` and `users reset-2fa`; the last one is also the recovery path for an administrator who lost their phone and recovery codes.
 
 ### Security
 - Strict default Content-Security-Policy, `X-Frame-Options: DENY`, `nosniff` and `no-referrer` headers; error responses never include stack traces.
@@ -44,6 +47,7 @@ All notable changes to this project are documented here. The format follows
 - Failed sign-ins are rate limited per e-mail address (5 failures) and per network address (20, or 200 for private and shared addresses) in 15 minutes, with a 5-minute pause. Attempts are counted before the password is checked, so simultaneous guesses cannot exceed a limit. An unknown e-mail address takes as long as a wrong password and gets the same message.
 - Dashboard pages send a strict Content-Security-Policy (same-origin styles, no scripts) and `Referrer-Policy: same-origin`.
 - Wrong two-factor codes are limited to 5 per 15 minutes and 20 per 24 hours per person; each code works once; authenticator secrets are encrypted at rest and covered by key rotation. An administrator session without confirmed two-factor sign-in is ended on the next request, and a password reset ends sign-ins that began with the old password.
+- The last active administrator cannot be disabled or demoted, and administrators cannot lock themselves out. Disabling an account, resetting two-factor sign-in or promoting staff to administrator signs the person out everywhere. User ids are never reused after a person or invitation is deleted.
 - The application refuses to start in production when `TRUSTED_PROXIES` trusts every address (`*`, `0.0.0.0/0`, `::/0`) or a very large network (IPv4 shorter than /8, IPv6 shorter than /16).
 - The application rejects request bodies over 2 MiB with 413, by declared length and by counting streamed bodies, so traffic that reaches it without Caddy is also capped.
 - Caddy's log no longer records query strings or request headers in either TLS mode.

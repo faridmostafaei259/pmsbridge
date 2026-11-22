@@ -1,6 +1,7 @@
-"""First-admin setup and admin password-reset pages, reached from a one-time link.
+"""Setup, invite and password-reset pages, reached from a one-time link.
 
-`/setup?token=...` (new administrator) and `/reset?token=...` (password reset) check the link and
+`/setup?token=...` (new administrator), `/invite?token=...` (invited person) and
+`/reset?token=...` (password reset) check the link and
 move the browser into a server-side flow, then redirect to the same page without the token. The
 token is used up only by the last form of the flow (see `flows.py`). An unknown, used or expired
 link all give the same message.
@@ -20,6 +21,7 @@ from pmsbridge.accounts.auth import PageError, clear_cookie, read_form, verify_c
 from pmsbridge.accounts.db import AuthFlow, OneTimeToken, Session, User
 from pmsbridge.accounts.flows import (
     FLOW_COOKIE,
+    SETUP_KINDS,
     Flow,
     find_token,
     flow_redirect,
@@ -34,7 +36,7 @@ from pmsbridge.core.storage import write_transaction
 logger = logging.getLogger("pmsbridge.accounts")
 
 LINK_INVALID = "This link is not valid any more. Ask an administrator for a new one."
-PURPOSES = {"/setup": "setup", "/reset": "reset"}
+PURPOSES = {"/setup": "setup", "/invite": "invite", "/reset": "reset"}
 
 
 class PasswordForm(BaseModel):
@@ -51,9 +53,9 @@ async def finalize_link(
 ) -> list[str]:
     """Use the link up and apply the result. Returns recovery codes (empty when none were made).
 
-    For `setup` the account becomes active with the password chosen in the flow (and, for an
-    administrator, the confirmed authenticator). For `reset` only the password changes, and every
-    session of the person ends. A link that was already used raises a page error.
+    For `setup` and `invite` the account becomes active with the password chosen in the flow (and,
+    for an administrator, the confirmed authenticator). For `reset` only the password changes,
+    and every session of the person ends. A link that was already used raises a page error.
     """
     async with write_transaction() as db:
         # The link may run out while the flow is open: it must still be live when it is used up.
@@ -91,7 +93,7 @@ def register_routes(app: FastAPI) -> None:
 
 
 def _register(app: FastAPI, path: str, kind: str) -> None:
-    title = "Choose your password" if kind == "setup" else "Choose a new password"
+    title = "Choose a new password" if kind == "reset" else "Choose your password"
 
     def form_page(
         request: Request, flow: Flow, error: str | None = None, status: int = 200
@@ -136,7 +138,7 @@ def _register(app: FastAPI, path: str, kind: str) -> None:
             if stored is None:
                 raise PageError(403, LINK_INVALID)
             stored.password_hash = password_hash
-        if kind == "setup" and flow.user.role == "admin":
+        if kind in SETUP_KINDS and flow.user.role == "admin":
             return RedirectResponse("/two-factor/enroll", 303)  # the account stays inactive
         flow.flow.password_hash = password_hash
         await finalize_link(flow)

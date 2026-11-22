@@ -12,7 +12,7 @@ from httpx import ASGITransport
 from sqlalchemy import delete, select, update
 from starlette.responses import PlainTextResponse
 
-from pmsbridge.accounts import passwords, totp, twofactor
+from pmsbridge.accounts import management, passwords, totp, twofactor
 from pmsbridge.accounts.auth import (
     LOGIN_COOKIE,
     SESSION_COOKIE,
@@ -317,3 +317,66 @@ async def test_an_administrator_session_without_confirmed_two_factor_is_ended(
         SESSION_COOKIE, await create_session(accounts["staff"]), domain="pms.example.test"
     )
     assert (await staff.get("/probe/user")).status_code == 200
+
+
+USER_ACTIONS = ("invite", "disable", "enable", "reset-2fa", "role", "revoke")
+
+
+async def test_the_users_page_and_its_actions_need_an_administrator_session(
+    browser: Browser, accounts: dict[str, int]
+) -> None:
+    visitor, staff = browser(), browser()
+    await sign_in(staff, *STAFF)
+    assert (await visitor.get("/admin/users")).status_code == 303
+    assert (await staff.get("/admin/users")).status_code == 403
+    for action in USER_ACTIONS:
+        path = f"/admin/users/{action}"
+        data = {"user_id": str(accounts["staff"]), "email": "x@example.test", "role": "admin"}
+        # No session: refused outright, never redirected into doing the action.
+        assert (
+            await visitor.post(path, data=data, headers={"Origin": BASE_URL})
+        ).status_code == 401, path
+        token = await page_token(staff)  # a valid token for a signed-in staff member
+        forged = await staff.post(
+            path, data={**data, "csrf_token": token}, headers={"Origin": BASE_URL}
+        )
+        assert forged.status_code == 403, path
+    async with session() as db:
+        users = (await db.execute(select(User))).scalars().all()
+    assert {user.email: (user.role, user.is_active) for user in users} == {
+        STAFF[0]: ("staff", True),
+        ADMIN[0]: ("admin", True),
+    }
+
+
+async def test_an_administrator_who_is_demoted_or_disabled_loses_the_users_page_at_once(
+    browser: Browser, accounts: dict[str, int]
+) -> None:
+    client = browser()
+    await sign_in(client, *ADMIN, secret=ADMIN_SECRET)
+    assert (await client.get("/admin/users")).status_code == 200
+    async with write_transaction() as db:
+        await db.execute(update(User).where(User.id == accounts["admin"]).values(role="staff"))
+    assert (await client.get("/admin/users")).status_code == 403
+    async with write_transaction() as db:
+        await db.execute(update(User).where(User.id == accounts["admin"]).values(is_active=False))
+    assert (await client.get("/admin/users")).status_code == 303
+
+
+async def test_a_person_with_a_pending_invitation_has_no_access(
+    browser: Browser, accounts: dict[str, int]
+) -> None:
+    await management.invite_user("pending@example.test", "admin", None)
+    client = browser()
+    for path in ("/", "/admin/users", "/probe/user"):
+        assert (await client.get(path)).status_code == 303, path
+    page = await client.get("/login")
+    token = CSRF_FIELD.search(page.text)
+    assert token
+    attempt = await client.post(
+        "/login",
+        data={"email": "pending@example.test", "password": "!", "csrf_token": token.group(1)},
+        headers={"Origin": BASE_URL},
+    )
+    assert attempt.status_code == 400
+    assert SESSION_COOKIE not in attempt.headers.get("set-cookie", "")

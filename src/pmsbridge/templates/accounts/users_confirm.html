@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% block title %}Confirm - pmsbridge{% endblock %}
+{% block content %}
+<section class="card narrow">
+  <h1>Confirm it is you</h1>
+  <p>Action: {{ label }}{% if target_email %} for {{ target_email }}{% endif %}{% if new_role %}, new role: {{ "administrator" if new_role == "admin" else new_role }}{% endif %}. Enter your password and a current two-factor code. You will not be asked again for 10 minutes.</p>
+  {% if error %}
+  <p class="error" role="alert">{{ error }}</p>
+  {% endif %}
+  <form method="post" action="/admin/users/{{ action }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input type="hidden" name="reauth" value="1">
+    {% for name, value in fields %}
+    <input type="hidden" name="{{ name }}" value="{{ value }}">
+    {% endfor %}
+    <label for="password">Password</label>
+    <input id="password" name="password" type="password" autocomplete="current-password" required autofocus>
+    <label for="code">Code</label>
+    <input id="code" name="code" type="text" autocomplete="one-time-code" maxlength="64" required>
+    <button type="submit">Confirm</button>
+  </form>
+  <p><a href="/admin/users">Cancel</a></p>
+</section>
+{% endblock %}

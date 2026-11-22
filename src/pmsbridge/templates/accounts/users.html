@@ -1,0 +1,105 @@
+{% extends "base.html" %}
+{% block title %}Users - pmsbridge{% endblock %}
+{% block content %}
+<section class="card wide">
+  <h1>Users</h1>
+  {% if error %}
+  <p class="error" role="alert">{{ error }}</p>
+  {% endif %}
+  {% if notice %}
+  <p class="notice" role="status">{{ notice }}</p>
+  {% endif %}
+
+  <h2>Invite a person</h2>
+  <p>You get a one-time link to send to them. It works once and ends after 72 hours. Nothing is sent by email.</p>
+  <form method="post" action="/admin/users/invite" class="inline">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label for="invite-email">Email address</label>
+    <input id="invite-email" name="email" type="email" maxlength="254" required>
+    <label for="invite-role">Role</label>
+    <select id="invite-role" name="role">
+      <option value="staff">Staff</option>
+      <option value="admin">Administrator</option>
+    </select>
+    <button type="submit">Invite</button>
+  </form>
+
+  <h2>People</h2>
+  {% if truncated %}
+  <p class="notice" role="status">Showing the first {{ max_listed }} people only.</p>
+  {% endif %}
+  <table>
+    <thead>
+      <tr><th>Email</th><th>Role</th><th>Status</th><th>Two-factor</th><th>Last sign-in</th><th>Actions</th></tr>
+    </thead>
+    <tbody>
+      {% for row in rows if row.status != "pending" %}
+      <tr>
+        <td>{{ row.email }}{% if row.id == admin_id %} (you){% endif %}</td>
+        <td>{{ "Administrator" if row.role == "admin" else "Staff" }}</td>
+        <td>{{ row.status }}</td>
+        <td>{{ "on" if row.two_factor else "off" }}</td>
+        <td>{{ row.last_login_at.strftime("%Y-%m-%d %H:%M UTC") if row.last_login_at else "never" }}</td>
+        <td>
+          {% if row.id == admin_id %}
+          <span class="muted">Not available for your own account</span>
+          {% elif row.status == "disabled" %}
+          <form method="post" action="/admin/users/enable">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <input type="hidden" name="user_id" value="{{ row.id }}">
+            <button type="submit">Turn on</button>
+          </form>
+          {% else %}
+          <form method="post" action="/admin/users/disable">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <input type="hidden" name="user_id" value="{{ row.id }}">
+            <button type="submit">Disable</button>
+          </form>
+          <form method="post" action="/admin/users/role">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <input type="hidden" name="user_id" value="{{ row.id }}">
+            <input type="hidden" name="role" value="{{ 'staff' if row.role == 'admin' else 'admin' }}">
+            <button type="submit">{{ "Make staff" if row.role == "admin" else "Make administrator" }}</button>
+          </form>
+          {% if row.two_factor %}
+          <form method="post" action="/admin/users/reset-2fa">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <input type="hidden" name="user_id" value="{{ row.id }}">
+            <button type="submit">Reset two-factor</button>
+          </form>
+          {% endif %}
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  <h2>Pending invitations</h2>
+  {% set pending = rows | selectattr("status", "equalto", "pending") | list %}
+  {% if pending %}
+  <table>
+    <thead><tr><th>Email</th><th>Role</th><th>Link</th><th>Actions</th></tr></thead>
+    <tbody>
+      {% for row in pending %}
+      <tr>
+        <td>{{ row.email }}</td>
+        <td>{{ "Administrator" if row.role == "admin" else "Staff" }}</td>
+        <td>{% if row.link_expires_at %}valid until {{ row.link_expires_at.strftime("%Y-%m-%d %H:%M UTC") }}{% else %}expired{% endif %}</td>
+        <td>
+          <form method="post" action="/admin/users/revoke">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <input type="hidden" name="user_id" value="{{ row.id }}">
+            <button type="submit">Cancel invitation</button>
+          </form>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  <p>To send a new link, invite the same email address again: the old link stops working.</p>
+  {% else %}
+  <p>No invitations are waiting.</p>
+  {% endif %}
+</section>
+{% endblock %}

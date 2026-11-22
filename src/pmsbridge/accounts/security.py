@@ -30,6 +30,7 @@ from pmsbridge.accounts.db import AuthFlow
 from pmsbridge.accounts.flows import (
     EXPIRED,
     FLOW_COOKIE,
+    SETUP_KINDS,
     Flow,
     attach_session,
     delete_flow,
@@ -48,11 +49,23 @@ SignedIn = Annotated[CurrentUser, Depends(require_user)]
 
 logger = logging.getLogger("pmsbridge.accounts")
 
+SECONDS_PER_MINUTE = 60
+MINUTES_PER_HOUR = 60
 BAD_CODE = "That code is not correct. Try again."
 BAD_REAUTH = "The password or the code is not correct."
-LOCKED = "Too many wrong codes. Wait 15 minutes and try again."
 NO_VAULT = "Two-factor sign-in cannot be set up: the server has no usable encryption key."
 ADMIN_MUST_KEEP = "Administrators must keep two-factor sign-in on."
+
+
+def locked_message(wait: int) -> str:
+    """The lockout message, with the real wait (15 minutes, or up to a day after many failures)."""
+    minutes = max(1, -(-wait // SECONDS_PER_MINUTE))
+    if minutes < MINUTES_PER_HOUR:
+        span = f"{minutes} minute{'s' if minutes != 1 else ''}"
+    else:
+        hours = -(-minutes // MINUTES_PER_HOUR)
+        span = f"{hours} hour{'s' if hours != 1 else ''}"
+    return f"Too many wrong codes. Try again in about {span}."
 
 
 class CodeForm(BaseModel):
@@ -72,7 +85,7 @@ def _code_form[M: CodeForm](model: type[M], raw: dict[str, str]) -> M:
         return model()  # never log the error: it describes the submitted fields
 
 
-async def _attempt(
+async def attempt(
     request: Request, user_id: int, check: Callable[[], Awaitable[bool]]
 ) -> tuple[bool, int]:
     """Run a code check under the per-person limit. Returns (accepted, seconds to wait)."""
@@ -94,7 +107,7 @@ async def _attempt(
     return accepted, 0
 
 
-def _page(
+def limited_page(
     request: Request,
     template: str,
     *,
@@ -107,7 +120,7 @@ def _page(
         request,
         template,
         status_code=429 if wait else status,
-        error=LOCKED if wait else error,
+        error=locked_message(wait) if wait else error,
         **context,
     )
     if wait:
@@ -120,11 +133,11 @@ def _recovery_page(request: Request, codes: list[str], continue_url: str) -> Res
 
 
 async def _enrollment(request: Request) -> Flow:
-    flow = await load_flow(request, ("setup", "enroll", "enable"))
+    flow = await load_flow(request, (*SETUP_KINDS, "enroll", "enable"))
     kind = flow.flow.kind
-    if kind == "setup" and flow.flow.password_hash is None:
+    if kind in SETUP_KINDS and flow.flow.password_hash is None:
         raise PageError(400, "Choose a password first.")
-    if kind != "setup" and await twofactor.has_totp(flow.user.id):
+    if kind not in SETUP_KINDS and await twofactor.has_totp(flow.user.id):
         raise PageError(400, "Two-factor sign-in is already on for this account.")
     if kind == "enable":
         current = await current_user_or_none(request)
@@ -151,7 +164,7 @@ async def _pending_secret(flow: Flow) -> bytes:
 async def _enroll_page(request: Request, flow: Flow, **kwargs: object) -> Response:
     secret = await _pending_secret(flow)
     uri = totp.otpauth_uri(secret, flow.user.email)
-    return _page(
+    return limited_page(
         request,
         "accounts/enroll.html",
         qr=totp.qr_svg(uri),
@@ -163,7 +176,7 @@ async def _enroll_page(request: Request, flow: Flow, **kwargs: object) -> Respon
 
 async def _finish_enrollment(request: Request, flow: Flow, secret: bytes, step: int) -> Response:
     kind, user_id = flow.flow.kind, flow.user.id
-    if kind == "setup":
+    if kind in SETUP_KINDS:
         codes = await finalize_link(flow, totp_secret=secret, step=step)
         response = _recovery_page(request, codes, "/login")
     else:
@@ -183,10 +196,14 @@ async def _finish_enrollment(request: Request, flow: Flow, secret: bytes, step: 
     return response
 
 
-async def _reauthenticate(
+async def confirm_identity(
     request: Request, user: CurrentUser, raw: dict[str, str]
-) -> Response | None:
-    """None if the password and a code are right; otherwise the page to send back."""
+) -> tuple[bool, int]:
+    """Check the signed-in person's password and a code, under the per-person limit.
+
+    Returns (confirmed, seconds to wait). Mistakes count towards the same limit as the sign-in
+    code step.
+    """
     form = _code_form(ReauthForm, raw)
     stored = await find_user_by_email(user.email)
 
@@ -197,7 +214,14 @@ async def _reauthenticate(
             and await twofactor.use_code(user.user_id, form.code)
         )
 
-    accepted, wait = await _attempt(request, user.user_id, check)
+    return await attempt(request, user.user_id, check)
+
+
+async def _reauthenticate(
+    request: Request, user: CurrentUser, raw: dict[str, str]
+) -> Response | None:
+    """None if the password and a code are right; otherwise the page to send back."""
+    accepted, wait = await confirm_identity(request, user, raw)
     if accepted:
         return None
     return await _security_page(request, user, error=BAD_REAUTH, status=400, wait=wait)
@@ -211,7 +235,7 @@ async def _security_page(
     status: int = 200,
     wait: int = 0,
 ) -> Response:
-    return _page(
+    return limited_page(
         request,
         "accounts/security.html",
         error=error,
@@ -229,7 +253,7 @@ def register_routes(app: FastAPI) -> None:
     @app.get("/login/verify", include_in_schema=False)
     async def verify_page(request: Request) -> Response:  # pyright: ignore[reportUnusedFunction]
         flow = await load_flow(request, ("second_factor",))
-        return _page(request, "accounts/verify.html", email=flow.user.email)
+        return limited_page(request, "accounts/verify.html", email=flow.user.email)
 
     @app.post("/login/verify", include_in_schema=False)
     async def verify_submit(request: Request) -> Response:  # pyright: ignore[reportUnusedFunction]
@@ -237,11 +261,11 @@ def register_routes(app: FastAPI) -> None:
         flow = await load_flow(request, ("second_factor",))
         await verify_csrf(request, raw, secret=flow.flow.csrf_secret)
         code = _code_form(CodeForm, raw).code
-        accepted, wait = await _attempt(
+        accepted, wait = await attempt(
             request, flow.user.id, lambda: twofactor.use_code(flow.user.id, code)
         )
         if not accepted:
-            return _page(
+            return limited_page(
                 request,
                 "accounts/verify.html",
                 email=flow.user.email,
@@ -270,7 +294,7 @@ def register_routes(app: FastAPI) -> None:
         async def check() -> bool:
             return step is not None
 
-        accepted, wait = await _attempt(request, flow.user.id, check)
+        accepted, wait = await attempt(request, flow.user.id, check)
         if not accepted or step is None:
             return await _enroll_page(request, flow, error=BAD_CODE, status=400, wait=wait)
         return await _finish_enrollment(request, flow, secret, step)
