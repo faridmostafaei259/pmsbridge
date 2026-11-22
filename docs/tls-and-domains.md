@@ -24,6 +24,7 @@ create this file for you. Until then, create it by hand. Never commit it or shar
 |---|---|---|
 | `DOMAIN` | yes | The host name people use, for example `mcp.example.com`. No `https://`, no path. |
 | `PUBLIC_BASE_URL` | yes | The full address, for example `https://mcp.example.com`. It must match `DOMAIN`. |
+| `ENCRYPTION_KEYS` | yes | The key that encrypts stored PMS credentials. Create it once with the command in the [configuration reference](configuration.md) and keep a copy in a password manager: without it, stored credentials can't be recovered. |
 | `TLS_MODE` | no | `auto` (the default) or `internal`. See below. |
 | `ACME_EMAIL` | yes for `auto` | An address the certificate authority can contact about your certificate. |
 | `ACME_CA` | no | `production` (the default) or `staging`. See "Testing without limits". |

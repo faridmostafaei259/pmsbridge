@@ -107,6 +107,8 @@ jobs:
       - name: Prepare settings for the compose checks
         run: |
           printf 'PUBLIC_BASE_URL=https://localhost:8443\n' > "$RUNNER_TEMP/service.env"
+          # A throwaway key generated per run; never a fixed value.
+          printf 'ENCRYPTION_KEYS=ci:%s\n' "$(openssl rand -base64 32)" >> "$RUNNER_TEMP/service.env"
           {
             echo "DOMAIN=localhost"
             echo "TLS_MODE=internal"

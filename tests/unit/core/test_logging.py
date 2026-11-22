@@ -5,6 +5,7 @@ import sys
 import pytest
 from pydantic import SecretStr
 
+from pmsbridge.core.crypto import generate_key
 from pmsbridge.core.logging import (
     REDACTED,
     configure_logging,
@@ -265,3 +266,38 @@ def test_very_long_text_is_truncated_quickly() -> None:
     result = scrub_text("a" * 1_000_000)
     assert len(result) < 9000
     assert result.endswith("[truncated]")
+
+
+def test_encryption_keys_are_masked_by_name_and_in_text(
+    dev_settings: Settings, capsys: pytest.CaptureFixture[str]
+) -> None:
+    configure_logging(dev_settings)
+    entry = generate_key("k1")
+    logging.getLogger("pmsbridge.test").info(
+        "loaded ENCRYPTION_KEYS=%s", entry, extra={"encryption_keys": entry}
+    )
+    out = capsys.readouterr().out
+    assert entry.split(":")[1] not in out
+
+
+@pytest.mark.parametrize("separator", [",", ", ", " , "])
+def test_every_entry_of_a_multi_entry_key_list_is_masked(
+    separator: str, dev_settings: Settings, capsys: pytest.CaptureFixture[str]
+) -> None:
+    configure_logging(dev_settings)
+    entries = [generate_key("new"), generate_key("old")]
+    value = separator.join(entries)
+    logging.getLogger("pmsbridge.test").info("loaded ENCRYPTION_KEYS=%s now", value)
+    logging.getLogger("pmsbridge.test").info("keys are %s", value)
+    out = capsys.readouterr().out
+    for entry in entries:
+        assert entry.split(":")[1] not in out
+
+
+def test_a_key_entry_after_an_equals_sign_is_masked_under_any_name(
+    dev_settings: Settings, capsys: pytest.CaptureFixture[str]
+) -> None:
+    configure_logging(dev_settings)
+    entry = generate_key()
+    logging.getLogger("pmsbridge.test").info("entry=%s", entry)
+    assert entry.split(":")[1] not in capsys.readouterr().out

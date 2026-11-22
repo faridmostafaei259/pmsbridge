@@ -5,6 +5,8 @@ from pathlib import Path
 import pytest
 from deploy_helpers import DOCKER_AVAILABLE, caddy_image, run_docker
 
+from pmsbridge.core.crypto import generate_key
+
 
 @pytest.fixture(scope="session")
 def caddy_available() -> str:
@@ -23,7 +25,9 @@ def caddy_available() -> str:
 def compose_env_file(tmp_path: Path) -> Path:
     """A settings file with fake values, in a temporary directory."""
     service_env = tmp_path / "service.env"
-    service_env.write_text("PUBLIC_BASE_URL=https://localhost:8443\n")
+    service_env.write_text(
+        f"PUBLIC_BASE_URL=https://localhost:8443\nENCRYPTION_KEYS={generate_key()}\n"
+    )
     env = tmp_path / "compose.env"
     env.write_text(
         "DOMAIN=localhost\n"

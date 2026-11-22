@@ -7,17 +7,27 @@ Every field is read from the environment variable with the same name in capitals
 from `DATA_DIR`). The configuration reference in `docs/configuration.md` is generated from the
 descriptions below by `scripts/gen_config_docs.py`.
 
-Secret values (added by later units, for example the encryption keys) must use `pydantic.SecretStr`
-so that printing a `Settings` object or logging it never shows them.
+Secret values (for example `ENCRYPTION_KEYS`) must use `pydantic.SecretStr` so that printing a
+`Settings` object or logging it never shows them.
 """
 
+import base64
+import binascii
+import re
 from collections.abc import Generator
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Annotated, Literal, cast
 from urllib.parse import urlsplit
 
-from pydantic import BeforeValidator, Field, ValidationError, field_validator, model_validator
+from pydantic import (
+    BeforeValidator,
+    Field,
+    SecretStr,
+    ValidationError,
+    field_validator,
+    model_validator,
+)
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 Environment = Literal["production", "development"]
@@ -27,6 +37,8 @@ DEVELOPMENT_PUBLIC_BASE_URL = "http://localhost:8000"
 DEVELOPMENT_DOMAIN = "localhost"
 DATABASE_FILE_NAME = "pmsbridge.db"
 BACKUP_DIR_NAME = "backups"
+ENCRYPTION_KEY_BYTES = 32
+KEY_ID_PATTERN = re.compile(r"[a-z0-9]{1,16}")
 
 
 class SettingsError(RuntimeError):
@@ -39,6 +51,33 @@ def _normalise_text(value: object) -> object:
 
 def _normalise_level(value: object) -> object:
     return value.strip().upper() if isinstance(value, str) else value
+
+
+def parse_encryption_keys(value: str) -> list[tuple[str, bytes]]:
+    """Parse `ENCRYPTION_KEYS` into `(key_id, key)` pairs, the active key first.
+
+    The error messages say which entry is wrong but never repeat any part of the value.
+    """
+    if not value.strip():
+        return []
+    keys: list[tuple[str, bytes]] = []
+    for number, entry in enumerate(value.split(","), start=1):
+        key_id, separator, encoded = entry.strip().partition(":")
+        if not separator or not KEY_ID_PATTERN.fullmatch(key_id):
+            raise ValueError(
+                f"entry {number} must look like <id>:<key>, where the id is 1 to 16 characters "
+                "from a-z and 0-9"
+            )
+        try:
+            key = base64.b64decode(encoded, validate=True)
+        except binascii.Error:
+            raise ValueError(f"entry {number} does not contain a valid base64 key") from None
+        if len(key) != ENCRYPTION_KEY_BYTES:
+            raise ValueError(f"entry {number} is not a {ENCRYPTION_KEY_BYTES * 8}-bit key")
+        if any(key_id == existing for existing, _ in keys):
+            raise ValueError(f"entry {number} repeats the id of an earlier entry")
+        keys.append((key_id, key))
+    return keys
 
 
 def _default_database_path(data: dict[str, object]) -> Path:
@@ -117,10 +156,31 @@ class Settings(BaseSettings):
         ),
     )
 
+    encryption_keys: SecretStr = Field(
+        default=SecretStr(""),
+        description=(
+            "The keys that protect stored PMS credentials and tokens: comma-separated entries "
+            "of the form `<id>:<key>`, where the key is 32 random bytes in base64. The first "
+            "entry encrypts new data; later entries are old keys kept only to read older data. "
+            "If you lose these keys, the stored credentials cannot be recovered, so back them "
+            "up. To change keys, run `pmsbridge rotate-keys`."
+        ),
+        json_schema_extra={
+            "required_in_production": True,
+            "default_text": "none (development: optional)",
+        },
+    )
+
     @field_validator("public_base_url", "domain", mode="after")
     @classmethod
     def _strip(cls, value: str) -> str:
         return value.strip()
+
+    @field_validator("encryption_keys", mode="after")
+    @classmethod
+    def _check_encryption_keys(cls, value: SecretStr) -> SecretStr:
+        parse_encryption_keys(value.get_secret_value())
+        return value
 
     @model_validator(mode="after")
     def _check_public_address(self) -> "Settings":
@@ -133,7 +193,13 @@ class Settings(BaseSettings):
             problems.append("PUBLIC_BASE_URL is required when ENVIRONMENT is production")
         if not self.domain:
             problems.append("DOMAIN is required when ENVIRONMENT is production")
+        keys_missing = (
+            self.environment == "production" and not self.encryption_keys.get_secret_value().strip()
+        )
+        keys_problem = "ENCRYPTION_KEYS is required when ENVIRONMENT is production"
         if problems:
+            if keys_missing:
+                problems.append(keys_problem)
             raise ValueError("; ".join(problems))
 
         parts = urlsplit(self.public_base_url)
@@ -158,6 +224,8 @@ class Settings(BaseSettings):
                 raise ValueError(
                     "the host of PUBLIC_BASE_URL must equal DOMAIN when ENVIRONMENT is production"
                 )
+        if keys_missing:
+            raise ValueError(keys_problem)
         return self
 
 
