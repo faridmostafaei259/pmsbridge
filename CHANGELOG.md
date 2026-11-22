@@ -31,4 +31,6 @@ All notable changes to this project are documented here. The format follows
 - Caddy and the application run as unprivileged users with all capabilities dropped and read-only root filesystems. The internal `/readyz` endpoint is blocked at the public edge, request bodies are capped at 2 MB, and only Caddy publishes ports.
 - Image scans in CI fail on fixable HIGH or CRITICAL findings. One known finding in the upstream Caddy binary is excepted until 2026-12-22.
 - Log redaction masks every `ENCRYPTION_KEYS` entry wherever it appears.
+- Threat model updated with concrete assets, trust boundaries, implemented versus planned controls, accepted risks and known gaps.
+- Security regression tests covering hostile ciphertext, secrets in logs, forged forwarded headers, hostile database files and deployment invariants, with strict expected-failure tests that track each known gap until it is fixed.
 - Database error messages and logs never include bound parameter values. A start-up failure is logged once as redacted JSON, never as a raw traceback.
