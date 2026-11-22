@@ -6,6 +6,7 @@ from pathlib import Path
 
 import pytest
 
+from pmsbridge.core import crypto
 from pmsbridge.core.settings import Settings, clear_settings_cache, set_settings_override
 from pmsbridge.core.storage import Database, migrate, reset_database
 
@@ -32,6 +33,16 @@ def clean_environment(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
     yield
     clear_settings_cache()
     set_settings_override(None)
+
+
+@pytest.fixture(autouse=True)
+def isolated_encrypted_field_registry() -> Iterator[None]:
+    """Feature modules register their own columns when imported; these tests see only their own."""
+    saved = dict(crypto._registry)  # pyright: ignore[reportPrivateUsage]
+    crypto._registry.clear()  # pyright: ignore[reportPrivateUsage]
+    yield
+    crypto._registry.clear()  # pyright: ignore[reportPrivateUsage]
+    crypto._registry.update(saved)  # pyright: ignore[reportPrivateUsage]
 
 
 @pytest.fixture

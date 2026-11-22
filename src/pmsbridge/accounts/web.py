@@ -5,7 +5,6 @@
 """
 
 import logging
-from datetime import UTC, datetime
 from urllib.parse import quote
 
 from fastapi import Depends, FastAPI
@@ -14,7 +13,7 @@ from starlette.requests import Request
 from starlette.responses import RedirectResponse, Response
 from starlette.staticfiles import StaticFiles
 
-from pmsbridge.accounts import csrf, passwords
+from pmsbridge.accounts import csrf, passwords, security, setup, twofactor
 from pmsbridge.accounts.auth import (
     LOGIN_COOKIE,
     LOGIN_COOKIE_SECONDS,
@@ -31,10 +30,11 @@ from pmsbridge.accounts.auth import (
     verify_csrf,
 )
 from pmsbridge.accounts.db import User
+from pmsbridge.accounts.flows import attach_session, flow_redirect, start_flow
 from pmsbridge.accounts.pages import STATIC_DIR, render
 from pmsbridge.accounts.ratelimit import LoginLimiter, client_address_key
 from pmsbridge.accounts.service import InvalidEmailError, find_user_by_email, normalise_email
-from pmsbridge.accounts.sessions import create_session, end_session
+from pmsbridge.accounts.sessions import end_session
 from pmsbridge.core.settings import get_settings
 from pmsbridge.core.storage import write_transaction
 
@@ -112,19 +112,15 @@ def _locked_page(request: Request, secret: str, next_path: str, email: str, wait
     return response
 
 
-async def _record_sign_in(user: User, password: str) -> None:
-    """Note the sign-in time and upgrade the stored hash if its parameters are out of date."""
-    new_hash = (
-        await passwords.rehash_password(password)
-        if passwords.needs_rehash(user.password_hash)
-        else None
-    )
+async def _upgrade_hash(user: User, password: str) -> None:
+    """Upgrade the stored hash if its parameters are out of date."""
+    if not passwords.needs_rehash(user.password_hash):
+        return
+    new_hash = await passwords.rehash_password(password)
     async with write_transaction() as db:
         stored = await db.get(User, user.id)
         if stored is not None:
-            stored.last_login_at = datetime.now(UTC)
-            if new_hash is not None:
-                stored.password_hash = new_hash
+            stored.password_hash = new_hash
 
 
 async def _login(request: Request, limiter: LoginLimiter) -> Response:
@@ -167,19 +163,20 @@ async def _login(request: Request, limiter: LoginLimiter) -> Response:
         limiter.release(email_key, address)
         return _locked_page(request, secret, next_path, form.email, locked)
     limiter.record_success(email_key, address)
-    await _record_sign_in(user, form.password)
-    # A new session id on every sign-in; a session the browser already had is ended.
-    if old_token := request.cookies.get(SESSION_COOKIE):
-        await end_session(old_token)
-    response = RedirectResponse(next_path, 303)
-    clear_cookie(response, LOGIN_COOKIE, samesite="strict")
-    set_cookie(
-        response,
-        SESSION_COOKIE,
-        await create_session(user.id, request.headers.get("user-agent")),
-        samesite="lax",
-    )
+    await _upgrade_hash(user, form.password)
+    # Two-factor users, and administrators who must enroll, get a session only after the next step.
+    if await twofactor.has_totp(user.id):
+        cookie = await start_flow(request, user.id, "second_factor", next_path=next_path)
+        return _after_password(flow_redirect("/login/verify", cookie, "second_factor"))
+    if user.role == "admin":
+        cookie = await start_flow(request, user.id, "enroll", next_path=next_path)
+        return _after_password(flow_redirect("/two-factor/enroll", cookie, "enroll"))
     logger.info("user signed in", extra={"user_id": user.id})
+    return await attach_session(request, user.id, RedirectResponse(next_path, 303))
+
+
+def _after_password(response: Response) -> Response:
+    clear_cookie(response, LOGIN_COOKIE, samesite="strict")
     return response
 
 
@@ -187,6 +184,8 @@ def register(app: FastAPI) -> None:
     passwords.prepare_dummy_hash()
     limiter = LoginLimiter()
     app.state.login_limiter = limiter
+    setup.register_routes(app)
+    security.register_routes(app)
     app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
     @app.exception_handler(NotAuthenticated)

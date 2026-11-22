@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% block title %}Set up two-factor sign-in - pmsbridge{% endblock %}
+{% block content %}
+<section class="card">
+  <h1>Set up two-factor sign-in</h1>
+  <p>Scan this picture with an authenticator app (for example your phone's built-in one, or any app that supports one-time codes). Then enter the 6-digit code the app shows.</p>
+  <div class="qr">{{ qr|safe }}</div>
+  <p>Cannot scan? Enter this key in the app by hand:</p>
+  <p><code class="secret">{{ secret }}</code></p>
+  <p>On a phone, you can also <a href="{{ uri }}">open this link in your authenticator app</a>. The full setup address is:</p>
+  <p><code class="secret">{{ uri }}</code></p>
+  {% if error %}
+  <p class="error" role="alert">{{ error }}</p>
+  {% endif %}
+  <form method="post" action="/two-factor/enroll">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label for="code">Code from the app</label>
+    <input id="code" name="code" type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="12" required autofocus>
+    <button type="submit">Confirm and turn on</button>
+  </form>
+</section>
+{% endblock %}

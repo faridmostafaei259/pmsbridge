@@ -1,7 +1,7 @@
 import pytest
 from starlette.requests import Request
 
-from pmsbridge.accounts import ratelimit
+from pmsbridge.accounts import ratelimit, twofactor
 from pmsbridge.accounts.ratelimit import FailureLimiter, LoginLimiter
 
 
@@ -181,3 +181,94 @@ def test_ipv4_and_missing_addresses() -> None:
     assert ratelimit.client_address_key(request_from("203.0.113.7")) == "203.0.113.7"
     assert ratelimit.client_address_key(request_from("::ffff:203.0.113.7")) == "203.0.113.7"
     assert ratelimit.client_address_key(request_from(None)) == "unknown"
+
+
+def pending_total(limiter: FailureLimiter) -> int:
+    return sum(entry.pending for entry in limiter._entries.values())  # pyright: ignore[reportPrivateUsage]
+
+
+def test_a_success_keeps_the_slots_of_other_attempts_in_flight() -> None:
+    limiter = LoginLimiter(clock=Clock())
+    email, address = "ada@example.test", "203.0.113.7"
+    assert limiter.reserve(email, address) == 0  # attempt A
+    assert limiter.reserve(email, address) == 0  # attempt B, still being checked
+    limiter.record_success(email, address)  # A succeeds
+    assert pending_total(limiter.email) == 1
+    assert pending_total(limiter.address) == 1
+    limiter.record_failure(email, address)  # B fails afterwards
+    assert pending_total(limiter.email) == 0
+    assert pending_total(limiter.address) == 0
+    entry = limiter.email._entries[ratelimit._digest(email)]  # pyright: ignore[reportPrivateUsage]
+    assert len(entry.failures) == 1  # B was still counted
+
+
+def test_a_success_forgets_failures_and_lockout_but_not_pending_slots() -> None:
+    clock = Clock()
+    limiter = FailureLimiter(2, clock=clock)
+    limiter.record_failure("a")
+    assert limiter.reserve("a") == 0
+    assert limiter.reserve("a") > 0  # one failure plus one pending reaches the limit
+    limiter.succeed("a")
+    assert limiter.lock_remaining("a") == 0
+    assert limiter.retry_after("a") == 0
+    assert limiter.reserve("a") == 0
+    limiter.succeed("a")
+    assert limiter._entries == {}  # idle keys are forgotten  # pyright: ignore[reportPrivateUsage]
+
+
+@pytest.mark.parametrize(
+    "host",
+    ["::1", "fe80::1", "fe80::a:b:c:d", "febf::1", "::ffff:127.0.0.1", "::ffff:10.1.2.3"],
+)
+def test_ipv6_loopback_and_link_local_addresses_stay_in_the_shared_group(host: str) -> None:
+    key = ratelimit.client_address_key(request_from(host))
+    assert ratelimit.is_shared_address(key)
+    limiter = LoginLimiter(clock=Clock())
+    for number in range(ratelimit.ADDRESS_MAX_FAILURES + 5):
+        assert attempt_fails(limiter, f"user-{number}@example.test", key) == 0
+
+
+def test_other_ipv6_addresses_are_still_grouped_by_network() -> None:
+    key = ratelimit.client_address_key(request_from("2001:db8:5::7"))
+    assert key == "2001:db8:5::/64"
+    assert not ratelimit.is_shared_address(key)
+
+
+# ---- The two limits on wrong second-factor codes ----
+
+
+def test_code_limits_five_in_fifteen_minutes_and_twenty_in_a_day() -> None:
+    clock = Clock()
+    limiter = twofactor.CodeLimiter(clock=clock)
+
+    def wrong() -> int:
+        wait = limiter.reserve("user:1")
+        if wait == 0:
+            limiter.record_failure("user:1")
+        return wait
+
+    for _ in range(3):  # three rounds of five wrong codes, each followed by the 15 minute pause
+        assert [wrong() for _ in range(5)] == [0] * 5
+        assert wrong() > 0
+        clock.now += twofactor.CODE_WINDOW_SECONDS + 1
+    # A correct code resets the short limit but not the day's total.
+    assert limiter.reserve("user:1") == 0
+    limiter.succeed("user:1")
+    assert [wrong() for _ in range(4)] == [0] * 4
+    assert limiter.daily.lock_remaining("user:1") == 0
+    assert wrong() == 0  # the twentieth failure of the day
+    wait = wrong()
+    assert wait > twofactor.CODE_WINDOW_SECONDS  # locked for the rest of the day
+    clock.now += twofactor.CODE_WINDOW_SECONDS + 1
+    assert limiter.reserve("user:1") > 0
+    clock.now += twofactor.DAILY_WINDOW_SECONDS
+    assert limiter.reserve("user:1") == 0
+
+
+def test_code_limits_are_per_person_and_count_slots_in_flight() -> None:
+    limiter = twofactor.CodeLimiter(clock=Clock())
+    assert [limiter.reserve("user:1") for _ in range(5)] == [0] * 5
+    assert limiter.reserve("user:1") > 0  # five checks still running use up the limit
+    assert limiter.reserve("user:2") == 0
+    limiter.release("user:1")
+    assert limiter.reserve("user:1") == 0

@@ -132,6 +132,21 @@ class FailureLimiter:
     def clear(self, key: str) -> None:
         self._entries.pop(_digest(key), None)
 
+    def succeed(self, key: str) -> None:
+        """An attempt succeeded: give its slot back and forget the failures and any lockout.
+
+        Slots of other attempts still in flight are kept, so they are still counted if they fail.
+        """
+        name = _digest(key)
+        entry = self._entries.get(name)
+        if entry is None:
+            return
+        entry.pending = max(0, entry.pending - 1)
+        entry.failures.clear()
+        entry.locked_until = 0.0
+        if entry.pending == 0:
+            del self._entries[name]
+
     def _prune(self, entry: _Entry, now: float) -> None:
         while entry.failures and entry.failures[0] <= now - self.window:
             entry.failures.popleft()
@@ -181,7 +196,7 @@ class LoginLimiter:
 
     def record_success(self, email: str, address: str) -> None:
         """A successful sign-in resets the e-mail count; the address only gives its slot back."""
-        self.email.clear(email)
+        self.email.succeed(email)
         self._for_address(address).release(address)
 
 
@@ -195,6 +210,8 @@ def client_address_key(request: Request) -> str:
     if isinstance(address, ipaddress.IPv6Address):
         if address.ipv4_mapped is not None:
             return str(address.ipv4_mapped)
+        if address.is_loopback or address.is_link_local:
+            return str(address)  # one host: grouping by /64 would hide it from the shared limit
         return str(ipaddress.ip_network((address, IPV6_PREFIX_BITS), strict=False))
     return str(address)
 

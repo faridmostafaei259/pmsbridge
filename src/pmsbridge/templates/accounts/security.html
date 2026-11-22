@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% block title %}Account security - pmsbridge{% endblock %}
+{% block content %}
+<section class="card">
+  <h1>Account security</h1>
+  {% if error %}
+  <p class="error" role="alert">{{ error }}</p>
+  {% endif %}
+  <h2>Two-factor sign-in</h2>
+  {% if enabled %}
+  <p>Two-factor sign-in is on. You have {{ remaining }} unused recovery codes.</p>
+  <h3>Get new recovery codes</h3>
+  <p>The old ones stop working. Enter your password and a current code.</p>
+  <form method="post" action="/account/security/recovery-codes">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label for="password-new-codes">Password</label>
+    <input id="password-new-codes" name="password" type="password" autocomplete="current-password" required>
+    <label for="code-new-codes">Code</label>
+    <input id="code-new-codes" name="code" type="text" autocomplete="one-time-code" maxlength="64" required>
+    <button type="submit">Make new recovery codes</button>
+  </form>
+  {% if is_admin %}
+  <p>Administrators cannot turn two-factor sign-in off.</p>
+  {% else %}
+  <h3>Turn it off</h3>
+  <form method="post" action="/account/security/disable">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label for="password-off">Password</label>
+    <input id="password-off" name="password" type="password" autocomplete="current-password" required>
+    <label for="code-off">Code</label>
+    <input id="code-off" name="code" type="text" autocomplete="one-time-code" maxlength="64" required>
+    <button type="submit">Turn off two-factor sign-in</button>
+  </form>
+  {% endif %}
+  {% else %}
+  <p>Two-factor sign-in is off. Turning it on asks for a code from an authenticator app after your password.</p>
+  <form method="post" action="/account/security/enable">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <button type="submit">Turn on two-factor sign-in</button>
+  </form>
+  {% endif %}
+</section>
+{% endblock %}

@@ -1,5 +1,6 @@
 """Fixtures for the account tests: an app with real migrations in a temporary directory."""
 
+import base64
 import re
 from collections.abc import AsyncIterator, Callable
 from pathlib import Path
@@ -10,11 +11,12 @@ from argon2 import PasswordHasher
 from fastapi import FastAPI
 from httpx import ASGITransport
 
-from pmsbridge.accounts import passwords
+from pmsbridge.accounts import passwords, totp, twofactor
 from pmsbridge.accounts.service import create_user
 from pmsbridge.app import create_app
-from pmsbridge.core.settings import Settings
-from pmsbridge.core.storage import reset_database
+from pmsbridge.core.crypto import generate_key
+from pmsbridge.core.settings import Settings, clear_settings_cache
+from pmsbridge.core.storage import reset_database, write_transaction
 
 # The hasher the application really uses, captured before any test swaps in a cheaper one.
 REAL_HASHER = passwords._hasher  # pyright: ignore[reportPrivateUsage]
@@ -22,6 +24,8 @@ BASE_URL = "https://pms.example.test"
 EMAIL = "ada@example.test"
 PASSWORD = "fake-passphrase-for-tests"  # noqa: S105
 CSRF_FIELD = re.compile(r'name="csrf_token" value="([^"]+)"')
+SECRET_TEXT = re.compile(r'<code class="secret">([A-Z2-7]+)</code>')
+RECOVERY_CODE = re.compile(r"<code>([A-Z2-7]{5}(?:-[A-Z2-7]{5}){3})</code>")
 
 
 @pytest.fixture(autouse=True)
@@ -36,6 +40,12 @@ def fast_hasher(monkeypatch: pytest.MonkeyPatch) -> None:
 @pytest.fixture(autouse=True)
 def public_address(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("PUBLIC_BASE_URL", BASE_URL)
+
+
+@pytest.fixture(autouse=True)
+def encryption_key(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("ENCRYPTION_KEYS", generate_key("test"))
+    clear_settings_cache()
 
 
 @pytest.fixture
@@ -99,4 +109,32 @@ async def sign_in(
             "next": next_path,
         },
         headers={"Origin": BASE_URL},
+    )
+
+
+def current_code(secret: bytes, offset: int = 0) -> str:
+    return totp.code_for(secret, totp.current_step() + offset)
+
+
+def secret_from_page(html: str) -> bytes:
+    match = SECRET_TEXT.search(html)
+    assert match, "the page shows no authenticator key"
+    text = match.group(1)
+    return base64.b32decode(text + "=" * (-len(text) % 8))
+
+
+async def add_authenticator(user: int, secret: bytes = bytes(range(1, 21))) -> bytes:
+    """Give a user a confirmed authenticator directly (no pages), starting with no accepted step."""
+    async with write_transaction() as db:
+        twofactor.add_totp(db, user, secret, 0)
+    return secret
+
+
+async def post_form(
+    client: httpx.AsyncClient, path: str, data: dict[str, str], page: str | None = None
+) -> httpx.Response:
+    """Load `page` (default: the same path), then post the form with its CSRF token and Origin."""
+    html = (await client.get(page or path)).text
+    return await client.post(
+        path, data={**data, "csrf_token": page_token(html)}, headers={"Origin": BASE_URL}
     )

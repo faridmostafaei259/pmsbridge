@@ -23,8 +23,10 @@ from starlette.requests import Request
 from starlette.responses import Response
 
 from pmsbridge.accounts import csrf
-from pmsbridge.accounts.sessions import SessionInfo, load_session
+from pmsbridge.accounts.db import UserTotp
+from pmsbridge.accounts.sessions import SessionInfo, end_session, load_session
 from pmsbridge.core.settings import get_settings
+from pmsbridge.core.storage import session
 
 SESSION_COOKIE: Final = "__Host-pmsbridge_session"
 LOGIN_COOKIE: Final = "__Host-pmsbridge_login"
@@ -70,11 +72,22 @@ def clear_cookie(response: Response, name: str, *, samesite: _SameSite) -> None:
     response.delete_cookie(name, path="/", secure=True, httponly=True, samesite=samesite)
 
 
+async def _has_totp(user_id: int) -> bool:
+    async with session() as db:
+        return await db.get(UserTotp, user_id) is not None
+
+
 async def _session_info(request: Request) -> SessionInfo | None:
     """The session for this request, looked up once per request."""
     state = request.state
     if not hasattr(state, "session_info"):
-        info = await load_session(request.cookies.get(SESSION_COOKIE))
+        token = request.cookies.get(SESSION_COOKIE)
+        info = await load_session(token)
+        if info is not None and info.role == "admin" and not await _has_totp(info.user_id):
+            # An administrator session needs confirmed two-factor. One made before that existed
+            # (or after it was removed) ends here; signing in again leads to enrollment.
+            await end_session(token or "")
+            info = None
         state.session_info = info
         if info is not None:
             state.csrf_secret = info.csrf_secret

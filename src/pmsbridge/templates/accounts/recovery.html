@@ -1,0 +1,14 @@
+{% extends "base.html" %}
+{% block title %}Recovery codes - pmsbridge{% endblock %}
+{% block content %}
+<section class="card">
+  <h1>Save your recovery codes</h1>
+  <p>Each code works once if you lose your phone. They are shown only now: print them or store them in a password manager. Any older recovery codes no longer work.</p>
+  <ul class="codes">
+    {% for code in codes %}
+    <li><code>{{ code }}</code></li>
+    {% endfor %}
+  </ul>
+  <p><a href="{{ continue_url }}">I have saved them, continue</a></p>
+</section>
+{% endblock %}

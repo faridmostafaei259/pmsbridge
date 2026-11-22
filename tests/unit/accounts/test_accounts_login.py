@@ -608,3 +608,51 @@ async def test_private_addresses_have_a_much_higher_address_limit_but_the_same_e
     for _ in range(EMAIL_MAX_FAILURES):
         await sign_in(gateway, password="wrong password here")
     assert (await sign_in(gateway)).status_code == 429
+
+
+# ---- Slots are given back when a check fails or is cancelled ----
+
+
+async def test_an_error_or_a_cancellation_during_the_check_gives_the_slots_back(
+    app: FastAPI, user_id: int, make_client: MakeClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    limiter = app.state.login_limiter
+    client = make_client("203.0.113.5")
+    page = await client.get("/login")
+    form = {"email": EMAIL, "password": PASSWORD, "csrf_token": page_token(page.text)}
+    real_verify = passwords.verify_password
+
+    def pending() -> int:
+        entries = [*limiter.email._entries.values(), *limiter.address._entries.values()]  # pyright: ignore[reportUnknownMemberType,reportPrivateUsage]
+        assert len(entries) == 2  # one entry per key
+        return sum(entry.pending for entry in entries)  # pyright: ignore[reportUnknownVariableType,reportUnknownMemberType]
+
+    async def broken(password_hash: str, password: str) -> bool:
+        raise RuntimeError("the hash check failed")
+
+    monkeypatch.setattr(passwords, "verify_password", broken)
+    failed = await client.post("/login", data=form, headers={"Origin": BASE_URL})
+    assert failed.status_code == 500  # the error is contained and shows no details
+    assert "hash check" not in failed.text
+    assert pending() == 0
+
+    started = asyncio.Event()
+
+    async def hangs(password_hash: str, password: str) -> bool:
+        started.set()
+        await asyncio.Event().wait()
+        return False
+
+    monkeypatch.setattr(passwords, "verify_password", hangs)
+    attempt = asyncio.create_task(client.post("/login", data=form, headers={"Origin": BASE_URL}))
+    await started.wait()
+    assert pending() == 2  # reserved while the check runs
+    attempt.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await attempt
+    assert pending() == 0
+
+    monkeypatch.setattr(passwords, "verify_password", real_verify)
+    assert limiter.reserve(EMAIL, "203.0.113.5") == 0  # a new attempt can reserve
+    limiter.release(EMAIL, "203.0.113.5")
+    assert (await sign_in(client)).status_code == 303
