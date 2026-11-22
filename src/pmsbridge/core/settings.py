@@ -148,6 +148,18 @@ class Settings(BaseSettings):
         le=100,
         description="How many automatic pre-upgrade backups to keep. Older ones are deleted.",
     )
+    session_idle_hours: int = Field(
+        default=12,
+        ge=1,
+        le=168,
+        description="Sign staff out after this many hours without activity in the dashboard.",
+    )
+    session_max_days: int = Field(
+        default=7,
+        ge=1,
+        le=90,
+        description="Sign staff out this many days after they signed in, even if they stay active.",
+    )
     log_level: Annotated[LogLevel, BeforeValidator(_normalise_level)] = Field(
         default="INFO",
         description=(
