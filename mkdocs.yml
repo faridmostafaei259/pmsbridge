@@ -21,3 +21,4 @@ nav:
       - adr/0007-tls-strategy.md
       - adr/0008-license.md
       - adr/0009-no-data-collection.md
+      - adr/0010-shared-and-provider-specific-tools.md
