@@ -1,0 +1,14 @@
+:root { color-scheme: light dark; font-family: system-ui, sans-serif; line-height: 1.5; }
+body { margin: 0; background: Canvas; color: CanvasText; }
+.topbar { display: flex; justify-content: space-between; align-items: center; padding: 0.75rem 1.5rem; border-bottom: 1px solid color-mix(in srgb, CanvasText 20%, transparent); }
+.brand { font-weight: 600; text-decoration: none; color: inherit; }
+.signout { display: flex; gap: 0.75rem; align-items: center; margin: 0; }
+.who { opacity: 0.7; }
+main { padding: 2rem 1.5rem; }
+.card { max-width: 48rem; margin: 0 auto; padding: 1.5rem; border: 1px solid color-mix(in srgb, CanvasText 20%, transparent); border-radius: 0.5rem; }
+.card.narrow { max-width: 24rem; }
+form label { display: block; margin-top: 1rem; font-weight: 500; }
+form input[type="email"], form input[type="password"], form input[type="text"] { box-sizing: border-box; width: 100%; padding: 0.5rem; margin-top: 0.25rem; font: inherit; }
+button { margin-top: 1.25rem; padding: 0.5rem 1rem; font: inherit; cursor: pointer; }
+button.link { margin: 0; padding: 0; border: 0; background: none; color: LinkText; text-decoration: underline; }
+.error { padding: 0.5rem 0.75rem; border-left: 4px solid #b00020; background: color-mix(in srgb, #b00020 10%, transparent); }

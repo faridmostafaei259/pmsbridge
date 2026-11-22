@@ -24,6 +24,9 @@ All notable changes to this project are documented here. The format follows
 - Generated configuration reference, including what to do if the application stops after an update.
 - Stored PMS credentials and tokens are encrypted with AES-256-GCM using versioned keys from the new `ENCRYPTION_KEYS` setting. Each value is bound to its own row and key header.
 - `python -m pmsbridge.admin keys status|reencrypt` shows which key each stored secret uses and re-encrypts everything under the active key. `status` refuses to confirm a rotation when no encrypted column is registered.
+- Dashboard sign-in and sign-out with local accounts. Passwords are stored as argon2id hashes (12 to 256 characters, no composition rules).
+- Server-side sessions that end after 12 hours without activity or 7 days in total (`SESSION_IDLE_HOURS`, `SESSION_MAX_DAYS`). Only a hash of the session cookie is stored, and every sign-in starts a new session.
+- Administrator guide covering signing in, session lifetime, sign-in lockouts and troubleshooting.
 
 ### Security
 - Strict default Content-Security-Policy, `X-Frame-Options: DENY`, `nosniff` and `no-referrer` headers; error responses never include stack traces.
@@ -35,6 +38,9 @@ All notable changes to this project are documented here. The format follows
 - A log call whose argument fails while being rendered no longer raises into the caller, and the error text is not written.
 - Threat model updated with concrete assets, trust boundaries, implemented versus planned controls, accepted risks and known gaps.
 - Security regression tests covering hostile ciphertext, secrets in logs, forged forwarded headers, hostile database files and deployment invariants, with strict expected-failure tests that track each known gap until it is fixed.
+- Dashboard forms are protected against cross-site request forgery with per-response masked tokens and an Origin/Referer check, including the sign-in form.
+- Failed sign-ins are rate limited per e-mail address (5 failures) and per network address (20, or 200 for private and shared addresses) in 15 minutes, with a 5-minute pause. Attempts are counted before the password is checked, so simultaneous guesses cannot exceed a limit. An unknown e-mail address takes as long as a wrong password and gets the same message.
+- Dashboard pages send a strict Content-Security-Policy (same-origin styles, no scripts) and `Referrer-Policy: same-origin`.
 - The application refuses to start in production when `TRUSTED_PROXIES` trusts every address (`*`, `0.0.0.0/0`, `::/0`) or a very large network (IPv4 shorter than /8, IPv6 shorter than /16).
 - The application rejects request bodies over 2 MiB with 413, by declared length and by counting streamed bodies, so traffic that reaches it without Caddy is also capped.
 - Caddy's log no longer records query strings or request headers in either TLS mode.
