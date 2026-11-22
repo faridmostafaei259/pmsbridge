@@ -1,0 +1,3 @@
+# Let's Encrypt staging: issues certificates that browsers and AI apps do not trust.
+# For testing only, so real certificates are not rate limited.
+acme_ca https://acme-staging-v02.api.letsencrypt.org/directory
