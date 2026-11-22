@@ -17,9 +17,15 @@ All notable changes to this project are documented here. The format follows
 - Caddy TLS modes `auto` (Let's Encrypt with ZeroSSL fallback, HSTS) and `internal` (testing only), with HTTP to HTTPS redirect.
 - Continuous integration: lint, type check, tests, shellcheck, emoji check, generated-docs freshness, dependency audit, image build and scan, compose validation and an edge smoke test. Dependabot updates for Actions, Python and container images.
 - Operator guide for TLS and domains.
+- Settings are read from environment variables only and validated at start-up, with clear errors that name the variable. In production the public address must be HTTPS and match `DOMAIN`.
+- Structured JSON logging to standard output that masks passwords, tokens, cookies, e-mail addresses and phone numbers.
+- SQLite storage in WAL mode with private file permissions. Database migrations run automatically at start-up after an online backup (newest 5 kept). A failed or newer-version start leaves the database unchanged and explains how to recover.
+- Database readiness check on `/readyz`.
+- Generated configuration reference, including what to do if the application stops after an update.
 
 ### Security
 - Strict default Content-Security-Policy, `X-Frame-Options: DENY`, `nosniff` and `no-referrer` headers; error responses never include stack traces.
 - Forwarded headers are trusted only from Caddy's fixed address on a private network.
 - Caddy and the application run as unprivileged users with all capabilities dropped and read-only root filesystems. The internal `/readyz` endpoint is blocked at the public edge, request bodies are capped at 2 MB, and only Caddy publishes ports.
 - Image scans in CI fail on fixable HIGH or CRITICAL findings. One known finding in the upstream Caddy binary is excepted until 2026-12-22.
+- Database error messages and logs never include bound parameter values. A start-up failure is logged once as redacted JSON, never as a raw traceback.
