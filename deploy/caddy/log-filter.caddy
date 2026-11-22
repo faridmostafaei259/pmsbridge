@@ -1,0 +1,21 @@
+# Shared by every Caddyfile.<mode>: the body of the global `log` block.
+#
+# Caddy's error log (a 502 while the app is down, for example) records each request with its full
+# URI and all of its request headers. Request URLs can carry one-time OAuth values and headers can
+# carry tokens, so both are cut before anything is written:
+# - the query string is removed from the URI (the path stays), and
+# - all request headers are removed, which covers X-CSRF-Token, X-XSRF-Token,
+#   Proxy-Authorization and any other header whose name contains token, secret, signature or
+#   session (Caddy cannot match header names by pattern, so none are kept).
+#
+# Any access-log block added later (a `log` directive in a site) must apply the same
+# `format filter` with the same fields, or it will write query strings and headers.
+output stdout
+format filter {
+	wrap json
+	fields {
+		request>uri regexp "\?.*" ""
+		request>headers delete
+	}
+}
+exclude admin.api

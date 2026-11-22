@@ -10,12 +10,11 @@
 	servers {
 		protocols h1 h2
 	}
-	# Runtime logs as JSON on stdout. Access logs stay off because request URLs can carry
-	# one-time OAuth values. The admin API (used by the container health check) is not logged.
+	# Runtime logs as JSON on stdout, with query strings and request headers removed (see
+	# log-filter.caddy). Access logs stay off because request URLs can carry one-time OAuth
+	# values. The admin API (used by the container health check) is not logged.
 	log {
-		output stdout
-		format json
-		exclude admin.api
+		import /etc/caddy/log-filter.caddy
 	}
 }
 

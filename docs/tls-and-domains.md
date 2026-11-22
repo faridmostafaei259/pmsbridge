@@ -160,6 +160,17 @@ headers when they come from Caddy. The private network therefore has a fixed add
 (`172.31.250.0/24`) and Caddy always has the same address on it (`172.31.250.10`). The application trusts
 that one address and no other, not even the rest of the range. This is set up for you.
 
+If you change `TRUSTED_PROXIES` in `.env`, list only the addresses of your own reverse proxy. A value that
+trusts every address (`*`, `0.0.0.0/0` or `::/0`), or a very large network, would let any visitor pretend to
+be someone else, so the application refuses to start with it in production. It prints one line naming
+`TRUSTED_PROXIES` and stops.
+
+With Docker Compose, this looks like a site that is down: the application keeps restarting and Caddy has
+nothing to forward to. To see the line, run `docker compose -f deploy/compose.yaml logs app`. To fix it,
+remove the `TRUSTED_PROXIES` line from `.env` (the default is Caddy's own address), or set it to Caddy's
+address (`172.31.250.10` unless you changed `CADDY_BACKEND_IP`), then start the stack again with
+`docker compose -f deploy/compose.yaml up -d`.
+
 ### When the default address range clashes
 
 The default range, `172.31.250.0/24`, sits inside `172.31.0.0/16`, which is the range of the default
@@ -194,8 +205,17 @@ IPv4 visitors are not affected. Sign-in and AI access work the same over both. A
 keeps real IPv6 addresses is planned.
 
 Caddy also limits request bodies to 2 MB and does not expose the internal readiness endpoint
-(`/readyz`) to the internet. The `/healthz` endpoint answers `{"status":"ok"}` and is safe to use for
-uptime monitoring.
+(`/readyz`) to the internet. The application has its own limit of 2 MiB per request body (a larger one gets
+the answer `413`), so the limit also holds for traffic that reaches the application without Caddy. The
+`/healthz` endpoint answers `{"status":"ok"}` and is safe to use for uptime monitoring.
+
+### What Caddy writes to its log
+
+Caddy logs its own messages, such as an error when the application is not reachable, to the container's
+output (`docker compose -f deploy/compose.yaml logs caddy`). Web addresses can carry one-time values, so
+these log lines keep the path of a request but leave out everything after the `?` (the query string). They
+also leave out all request headers, so tokens, session values and similar headers are never written. The
+log does not record every request, only problems.
 
 ## Other modes (coming)
 

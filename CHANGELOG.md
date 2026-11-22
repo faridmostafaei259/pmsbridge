@@ -35,4 +35,7 @@ All notable changes to this project are documented here. The format follows
 - A log call whose argument fails while being rendered no longer raises into the caller, and the error text is not written.
 - Threat model updated with concrete assets, trust boundaries, implemented versus planned controls, accepted risks and known gaps.
 - Security regression tests covering hostile ciphertext, secrets in logs, forged forwarded headers, hostile database files and deployment invariants, with strict expected-failure tests that track each known gap until it is fixed.
+- The application refuses to start in production when `TRUSTED_PROXIES` trusts every address (`*`, `0.0.0.0/0`, `::/0`) or a very large network (IPv4 shorter than /8, IPv6 shorter than /16).
+- The application rejects request bodies over 2 MiB with 413, by declared length and by counting streamed bodies, so traffic that reaches it without Caddy is also capped.
+- Caddy's log no longer records query strings or request headers in either TLS mode.
 - Database error messages and logs never include bound parameter values. A start-up failure is logged once as redacted JSON, never as a raw traceback.
