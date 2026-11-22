@@ -1,3 +1,6 @@
+import pytest
+
+import pmsbridge.__main__ as entry
 from pmsbridge.__main__ import (
     DEFAULT_TRUSTED_PROXIES,
     HOST,
@@ -43,3 +46,37 @@ def test_config_ignores_any_worker_count_in_the_environment() -> None:
 def test_config_uses_trusted_proxies_from_the_environment() -> None:
     config = build_config(create_app(()), {"TRUSTED_PROXIES": "172.18.0.0/16"})
     assert config.forwarded_allow_ips == "172.18.0.0/16"
+
+
+def test_main_returns_1_with_a_clean_message_for_invalid_settings(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setenv("ENVIRONMENT", "production")
+    monkeypatch.setenv("PUBLIC_BASE_URL", "http://insecure-value.example")
+    monkeypatch.setenv("DOMAIN", "insecure-value.example")
+    started: list[bool] = []
+    monkeypatch.setattr(entry.uvicorn.Server, "run", lambda self: started.append(True))
+
+    assert entry.main() == 1
+    err = capsys.readouterr().err
+    assert "PUBLIC_BASE_URL" in err
+    assert "insecure-value" not in err
+    assert "Traceback" not in err
+    assert started == []
+
+
+def test_main_returns_1_without_raw_traceback_when_startup_fails(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    def failing_app() -> object:
+        raise RuntimeError("feature failed to register")
+
+    monkeypatch.setattr(entry, "create_app", failing_app)
+    started: list[bool] = []
+    monkeypatch.setattr(entry.uvicorn.Server, "run", lambda self: started.append(True))
+
+    assert entry.main() == 1
+    captured = capsys.readouterr()
+    assert captured.err == ""
+    assert "startup stopped" in captured.out
+    assert started == []

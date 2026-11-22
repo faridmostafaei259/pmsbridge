@@ -22,6 +22,10 @@ import uvicorn
 from fastapi import FastAPI
 
 from pmsbridge.app import create_app
+from pmsbridge.core.logging import configure_logging
+from pmsbridge.core.settings import SettingsError, get_settings
+
+logger = logging.getLogger("pmsbridge.startup")
 
 HOST = "0.0.0.0"  # noqa: S104  (inside the container; the host publishes no port for the app)
 PORT = 8000
@@ -55,12 +59,20 @@ def build_config(app: FastAPI, env: Mapping[str, str]) -> uvicorn.Config:
 
 
 def main() -> int:
-    logging.basicConfig(
-        level=logging.INFO,
-        stream=sys.stdout,
-        format="%(asctime)s %(levelname)s %(name)s %(message)s",
-    )
-    server = uvicorn.Server(build_config(create_app(), os.environ))
+    try:
+        configure_logging(get_settings())
+    except SettingsError as exc:
+        sys.stderr.write(f"{exc}\n")
+        return 1
+    try:
+        app = create_app()
+    except Exception:
+        # Logged once, as redacted JSON, so operators never see a raw traceback on stderr.
+        logger.critical(
+            "startup stopped; the cause and the next step are in this record", exc_info=True
+        )
+        return 1
+    server = uvicorn.Server(build_config(app, os.environ))
     server.run()
     return 0
 

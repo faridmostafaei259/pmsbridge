@@ -7,6 +7,7 @@ theme:
 nav:
   - Home: index.md
   - TLS and domains: tls-and-domains.md
+  - Configuration: configuration.md
   - Architecture: architecture.md
   - Security model: security/threat-model.md
   - Design decisions:

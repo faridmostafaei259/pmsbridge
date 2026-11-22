@@ -6,8 +6,12 @@ readme = "README.md"
 license = { file = "LICENSE" }
 requires-python = ">=3.12,<3.13"
 dependencies = [
+    "aiosqlite>=0.22.1",
+    "alembic>=1.20.1",
     "fastapi>=0.165.0",
     "pydantic>=2.14.4",
+    "pydantic-settings>=2.16.3",
+    "sqlalchemy[asyncio]>=2.1.9",
     "uvicorn>=0.54.0",
 ]
 
@@ -35,6 +39,8 @@ ignore = ["PLR0913"]
 
 [tool.ruff.lint.per-file-ignores]
 "tests/**" = ["S101", "PLR2004"]
+# The revision template imports `sa` and `op`, which a small migration may not use.
+"src/pmsbridge/migrations/versions/*" = ["F401"]
 
 [tool.pyright]
 include = ["src"]
