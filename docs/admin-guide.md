@@ -307,9 +307,10 @@ command `pmsbridge users` arrive with the installer and command-line tool.
 
 An AI assistant (for example a chat application that supports MCP servers) connects to pmsbridge in four
 steps. It looks up how to connect, registers itself, sends the person who is using it to pmsbridge to approve,
-and then receives access. This section covers the approval step. The step after it, where the assistant
-exchanges the approval for access it can use, is not available yet, so assistants cannot finish
-connecting yet.
+and then exchanges the approval for access it can use. This section covers the approval step; the
+sections after it cover what the assistant receives and how you stop it. The page where assistants use their
+access to read PMS data arrives with the connection feature, so until then an assistant can finish connecting
+but has nothing to call yet.
 
 Any signed-in person, staff or administrator, can approve an assistant. Administrators must have two-factor
 sign-in on, as everywhere else. Nobody else can approve: a visitor who is not signed in is sent to the sign-in
@@ -351,10 +352,10 @@ whether to follow the link. Nothing was shared. The browser goes back automatica
 
 The page has a section **PMS connections**. Once PMS connections exist, it lists yours: tick the ones the
 assistant may use, or choose "All of my connections, including ones added later". pmsbridge records the
-choice, and the assistant can use only the connections you ticked once assistants can connect. Until the first
+choice, and the assistant can use only the connections you ticked. Until the first
 connection is added, the page says "You have no PMS connections yet, so this assistant gets access to none":
 an approval given now covers no connections, and it does not extend to connections added later. Once a
-connection exists, approve the assistant again and choose which connections it may use.
+connection exists, open [Connected apps](#connected-apps) and choose which connections the assistant may use.
 
 ### Registration, expiry and limits
 
@@ -375,8 +376,98 @@ If a connection attempt shows "This request names an application that is not reg
 return to an address the application did not register", start the connection again in the assistant. Nothing
 was shared.
 
+### What the assistant receives
+
+After you press **Allow access**, the assistant exchanges the one-time approval for two values:
+
+- an **access token** that works for 1 hour; and
+- a **refresh token** (only if the assistant registered as one that refreshes) that it uses to get a new access
+  token without asking you again.
+
+Every refresh gives the assistant a new refresh token and retires the old one. A refresh token ends after
+30 days without use, and in any case 90 days after you approved: after that the assistant has to ask you
+again. If a retired refresh token is ever used a second time, pmsbridge assumes a copy was stolen and cancels
+the whole approval, so both the thief and the real assistant have to start over. Only the one-way fingerprints
+of tokens are stored, so nobody who reads the database can use them, and the tokens are never written to the
+logs.
+
+An assistant that fails to prove who it is (a wrong secret, a wrong approval code or a wrong proof value) is
+refused with a short error that says nothing more. Repeated failures from one address are paused for a few
+minutes, and so are repeated wrong secrets for one assistant that has a secret; the assistant is told to wait.
+Assistants without a secret are not paused by name, because anyone could claim their name to lock them out;
+only the address limit applies to them. An approval that is refreshed more than 10 times in a minute is told
+to wait a short time; its refresh token is not used up.
+
+### Connected apps
+
+Every signed-in person has a page **Connected apps** (link at the top of every page, address `/account/apps`).
+It lists the assistants you have approved, one entry per assistant even if you approved it more than once:
+
+- the name the assistant chose and the host your browser returns to;
+- when you approved it, and "Last used", the last time it received a new access token (when you approved it
+  or when it refreshed); this is not updated each time it reads data, and it stays even after old tokens are
+  cleaned up ("never" if it never received one);
+- which PMS connections it covers.
+
+Two things can be done there. **Revoke access** cancels all your approvals for that assistant: its access
+token stops working at once and its refresh token cannot be used, so the assistant has to ask you again.
+**Save connections** (shown once you have PMS connections) changes which connections the assistant may use,
+with the same choices as the approval page, and it applies at once to the access token the assistant already
+holds. Until PMS connections exist the page says "No PMS connections yet".
+
+You can only see and change your own approvals.
+
+### Revoking an assistant as an administrator
+
+Administrators also have an **Assistants** page (`/admin/assistants`) that lists every person's approvals:
+who gave it, which assistant (with its client id), when, last use and connections. **Revoke access** there cancels one person's
+approvals for one assistant. Like other sensitive actions, it asks you to confirm your password and a current
+two-factor code first (see [Confirming it is you](#confirming-it-is-you)).
+
+If an assistant looks suspicious (a name or return host nobody recognises), revoke it here. If a person's
+laptop or phone was lost, revoke their assistants, or disable their account, which does the same.
+
 ### When access ends
 
-Disabling a person, resetting their two-factor sign-in, resetting their password, or changing their role (to
-administrator or to staff) cancels every approval they gave to assistants, immediately. Seeing and
-cancelling your own approvals, and the administrator command to cancel everyone's, are not available yet.
+An assistant loses access immediately, with no waiting for the hour to run out, when:
+
+- you or an administrator revoke it (above), or the assistant itself asks to revoke its token (a revoked refresh
+  token cancels the whole approval);
+- the person is disabled, their password is reset, their two-factor sign-in is reset, or their role changes
+  (to administrator or to staff). Every approval the person gave is cancelled; other people's approvals are
+  untouched. Turning the account on again does not bring the approvals back: the person approves again;
+- an administrator's two-factor sign-in is removed (assistants of an administrator work only while two-factor is on);
+- the assistant's registration expires (90 days without activity);
+- the refresh token ends (30 days without use, or 90 days after approval), after which the access token ends
+  within the hour.
+
+### The command `oauth revoke-ai-access`
+
+Administrators with server access can cancel approvals from the command line:
+
+```bash
+docker compose -f deploy/compose.yaml exec app python -m pmsbridge.admin oauth revoke-ai-access --user person@example.com
+docker compose -f deploy/compose.yaml exec app python -m pmsbridge.admin oauth revoke-ai-access --client <client id>
+docker compose -f deploy/compose.yaml exec app python -m pmsbridge.admin oauth revoke-ai-access --user person@example.com --client <client id>
+docker compose -f deploy/compose.yaml exec app python -m pmsbridge.admin oauth revoke-ai-access --all --yes
+```
+
+- `--user` cancels every approval one person gave; `--client` cancels every approval given to one assistant
+  (each assistant's client id is shown on the Assistants page);
+  both together cancel only that person's approvals for that assistant.
+- `--all` cancels everything and needs `--yes`, because every assistant then has to be approved again. It
+  cannot be combined with `--user` or `--client`.
+- At least one of `--user`, `--client` and `--all` is required.
+- The command prints counts only: approvals cancelled, people affected, assistants affected. Nothing secret is
+  printed. It writes one audit line to the log with the person's numeric id and the client id (when you gave
+  them), without email addresses or tokens.
+- Exit codes: 0 done (also when nothing matched), 1 refused (no such person or assistant), 2 bad options or the
+  database cannot be used.
+
+**What exists today.** The `python -m pmsbridge.admin` entry point and a host command arrive with the
+installer and command-line tool. Until the entry point ships, the commands above do not run on a fresh image,
+even though the `oauth revoke-ai-access` action itself is already built and tested. In the meantime, use the
+**Assistants** page to revoke one person's approvals for one assistant.
+
+There are no signing keys to rotate. Tokens are random values checked against the database, so revoking takes
+effect straight away and there is nothing to roll over.

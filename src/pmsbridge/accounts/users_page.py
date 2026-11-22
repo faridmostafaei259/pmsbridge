@@ -5,7 +5,8 @@ change role also need the acting administrator to have confirmed their password 
 the last 10 minutes (see `reauth.py`): without that, the action's own form comes back as a short
 confirmation page that carries the same fields plus a password and a code. Mistakes there count
 towards the same limit as the sign-in code step. The rules about who may be changed are in
-`management.py`.
+`management.py`. Cancelling a person's assistant access (`oauth/apps.py`) uses the same
+confirmation.
 """
 
 import logging
@@ -56,6 +57,7 @@ ACTIONS: Final = {
     "enable": ("Turn an account on again", ("user_id",)),
     "reset-2fa": ("Reset two-factor sign-in", ("user_id",)),
     "role": ("Change a role", ("user_id", "role")),
+    "revoke-assistant": ("Cancel an assistant's access", ("user_id", "client_id")),
 }
 
 
@@ -81,10 +83,18 @@ async def _users_page(
     )
 
 
-async def _guarded(
-    request: Request, admin: CurrentUser, action: str
+async def guarded(
+    request: Request,
+    admin: CurrentUser,
+    action: str,
+    *,
+    post_path: str | None = None,
+    cancel_path: str = "/admin/users",
 ) -> tuple[dict[str, str], Response | None]:
-    """Check CSRF and the recent confirmation. Returns the form values, or the page to send."""
+    """Check CSRF and the recent confirmation. Returns the form values, or the page to send.
+
+    Also used by the assistants page (`oauth/apps.py`), which names its own form and cancel paths.
+    """
     raw = await read_form(request)
     await verify_csrf(request, raw)
     label, fields = ACTIONS[action]
@@ -110,6 +120,8 @@ async def _guarded(
             target_email=target_email,
             new_role=values.get("role", "") if action in ("role", "invite") else "",
             fields=list(values.items()),
+            post_path=post_path or f"/admin/users/{action}",
+            cancel_path=cancel_path,
         )
 
     if raw.get("reauth") != "1":
@@ -148,7 +160,7 @@ def register_routes(app: FastAPI) -> None:
 
     @app.post("/admin/users/invite", include_in_schema=False)
     async def invite(request: Request, admin: Admin) -> Response:  # pyright: ignore[reportUnusedFunction]
-        values, stop = await _guarded(request, admin, "invite")
+        values, stop = await guarded(request, admin, "invite")
         if stop is not None:
             return stop
         try:
@@ -160,7 +172,7 @@ def register_routes(app: FastAPI) -> None:
 
     @app.post("/admin/users/disable", include_in_schema=False)
     async def disable(request: Request, admin: Admin) -> Response:  # pyright: ignore[reportUnusedFunction]
-        values, stop = await _guarded(request, admin, "disable")
+        values, stop = await guarded(request, admin, "disable")
         if stop is not None:
             return stop
 
@@ -172,7 +184,7 @@ def register_routes(app: FastAPI) -> None:
 
     @app.post("/admin/users/enable", include_in_schema=False)
     async def enable(request: Request, admin: Admin) -> Response:  # pyright: ignore[reportUnusedFunction]
-        values, stop = await _guarded(request, admin, "enable")
+        values, stop = await guarded(request, admin, "enable")
         if stop is not None:
             return stop
 
@@ -184,7 +196,7 @@ def register_routes(app: FastAPI) -> None:
 
     @app.post("/admin/users/reset-2fa", include_in_schema=False)
     async def reset_two_factor(request: Request, admin: Admin) -> Response:  # pyright: ignore[reportUnusedFunction]
-        values, stop = await _guarded(request, admin, "reset-2fa")
+        values, stop = await guarded(request, admin, "reset-2fa")
         if stop is not None:
             return stop
 
@@ -196,7 +208,7 @@ def register_routes(app: FastAPI) -> None:
 
     @app.post("/admin/users/role", include_in_schema=False)
     async def role(request: Request, admin: Admin) -> Response:  # pyright: ignore[reportUnusedFunction]
-        values, stop = await _guarded(request, admin, "role")
+        values, stop = await guarded(request, admin, "role")
         if stop is not None:
             return stop
 

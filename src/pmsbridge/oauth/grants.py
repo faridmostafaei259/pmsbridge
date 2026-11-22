@@ -3,7 +3,7 @@
 A code is 32 random bytes, stored only as a SHA-256, valid for 5 minutes, and usable once. Using a
 code a second time revokes the grant it belonged to (OAuth 2.1: a replayed code means the code was
 probably stolen). A revoked grant issues nothing, and grants are revoked when their person is
-disabled, demoted or promoted, or has their sign-in reset.
+disabled, demoted or promoted, or has their sign-in or password reset.
 """
 
 import base64
@@ -14,7 +14,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Final
 
-from sqlalchemy import delete, update
+from sqlalchemy import delete, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from pmsbridge.accounts.sessions import hash_token
@@ -152,10 +152,44 @@ async def redeem_code(
 async def revoke_user_grants_in(db: AsyncSession, user_id: int) -> None:
     """Revoke every grant of a person, inside the caller's transaction.
 
-    Called when the person is disabled, demoted or promoted, or their two-factor sign-in is reset.
+    Called when the person is disabled, demoted or promoted, or their two-factor sign-in or
+    password is reset. Tokens need no separate step: they are valid only while their grant is.
     """
     await db.execute(
         update(OAuthGrant)
         .where(OAuthGrant.user_id == user_id, OAuthGrant.revoked_at.is_(None))
         .values(revoked_at=datetime.now(UTC))
     )
+
+
+@dataclass(frozen=True)
+class RevokeSummary:
+    """How much a bulk revocation ended: approvals, the people who gave them, the assistants."""
+
+    grants: int
+    people: int
+    assistants: int
+
+
+async def revoke_grants(
+    *, user_id: int | None = None, client_id: str | None = None
+) -> RevokeSummary:
+    """Revoke every live grant that matches. With neither filter, every live grant.
+
+    Returns the counts. Used by the connected-apps pages and the `oauth revoke-ai-access` command.
+    """
+    now = datetime.now(UTC)
+    async with write_transaction() as db:
+        query = select(OAuthGrant).where(OAuthGrant.revoked_at.is_(None))
+        if user_id is not None:
+            query = query.where(OAuthGrant.user_id == user_id)
+        if client_id is not None:
+            query = query.where(OAuthGrant.client_id == client_id)
+        live = list((await db.execute(query)).scalars())
+        for grant in live:
+            grant.revoked_at = now
+        return RevokeSummary(
+            len(live),
+            len({grant.user_id for grant in live}),
+            len({grant.client_id for grant in live}),
+        )

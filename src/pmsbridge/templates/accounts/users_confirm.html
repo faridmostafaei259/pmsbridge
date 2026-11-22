@@ -7,7 +7,7 @@
   {% if error %}
   <p class="error" role="alert">{{ error }}</p>
   {% endif %}
-  <form method="post" action="/admin/users/{{ action }}">
+  <form method="post" action="{{ post_path }}">
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
     <input type="hidden" name="reauth" value="1">
     {% for name, value in fields %}
@@ -19,6 +19,6 @@
     <input id="code" name="code" type="text" autocomplete="one-time-code" maxlength="64" required>
     <button type="submit">Confirm</button>
   </form>
-  <p><a href="/admin/users">Cancel</a></p>
+  <p><a href="{{ cancel_path }}">Cancel</a></p>
 </section>
 {% endblock %}

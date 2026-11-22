@@ -28,7 +28,7 @@ import re
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from typing import Annotated, Final
-from urllib.parse import quote, urlencode, urlsplit
+from urllib.parse import quote, urlencode
 
 from fastapi import Depends, FastAPI
 from starlette.requests import Request
@@ -46,7 +46,7 @@ from pmsbridge.accounts.auth import (
 )
 from pmsbridge.accounts.pages import PAGE_CSP, render
 from pmsbridge.oauth import clients, consent, grants
-from pmsbridge.oauth.config import AUTHORIZE_PATH, SCOPE, issuer, mcp_resource
+from pmsbridge.oauth.config import AUTHORIZE_PATH, SCOPE, is_mcp_resource, issuer, mcp_resource
 from pmsbridge.oauth.db import OAuthClient
 from pmsbridge.oauth.redirects import (
     LOOPBACK_HOSTS,
@@ -123,13 +123,6 @@ def _error_page(request: Request, error: AuthorizationError) -> Response:
     )
 
 
-def _canonical(url: str) -> str | None:
-    parts = urlsplit(url)
-    if parts.query or parts.fragment or not parts.scheme or not parts.netloc:
-        return None
-    return f"{parts.scheme.lower()}://{parts.netloc.lower()}{parts.path.rstrip('/')}"
-
-
 async def check_client(params: Mapping[str, str], repeated: Iterable[str] = ()) -> OAuthClient:
     """Step 1: the client and redirect URI. Raises `PageError`; nothing here redirects."""
     repeated = set(repeated)
@@ -172,7 +165,7 @@ def check_parameters(
     if params.get("code_challenge_method") != "S256":
         raise refuse("invalid_request", "code_challenge_method must be S256.")
     resource = params.get("resource") or mcp_resource()
-    if _canonical(resource) != _canonical(mcp_resource()):
+    if not is_mcp_resource(resource):
         raise refuse("invalid_target", "The resource must be this server's MCP address.")
     return AuthorizeRequest(
         client.client_id, client.client_name, redirect_uri, challenge, state, mcp_resource()

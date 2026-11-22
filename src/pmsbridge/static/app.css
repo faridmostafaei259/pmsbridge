@@ -19,6 +19,7 @@ button.link { margin: 0; padding: 0; border: 0; background: none; color: LinkTex
 .card h2 { margin-top: 1.5rem; }
 .card.wide { max-width: 64rem; }
 nav { margin-right: auto; margin-left: 1.5rem; }
+nav a + a { margin-left: 1rem; }
 table { width: 100%; border-collapse: collapse; }
 th, td { padding: 0.4rem 0.5rem; text-align: left; vertical-align: top; border-bottom: 1px solid color-mix(in srgb, CanvasText 15%, transparent); }
 td form { display: inline; }

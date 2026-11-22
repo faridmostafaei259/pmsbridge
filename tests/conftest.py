@@ -6,6 +6,7 @@ override and database are reset afterwards. Nothing reads host settings or write
 """
 
 import asyncio
+import logging
 from collections.abc import Iterator
 from pathlib import Path
 
@@ -39,3 +40,18 @@ def _isolated_settings(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Itera
     clear_settings_cache()
     if storage._database is not None:  # test isolation needs the shared handle
         asyncio.run(storage.reset_database())
+
+
+@pytest.fixture(autouse=True)
+def _restore_root_logging() -> Iterator[None]:
+    """Undo logging configuration done by a test so handlers never outlive captured streams."""
+    root = logging.getLogger()
+    handlers, filters, level = list(root.handlers), list(root.filters), root.level
+    yield
+    for handler in list(root.handlers):
+        if handler not in handlers:
+            root.removeHandler(handler)
+            handler.close()
+    root.handlers[:] = handlers
+    root.filters[:] = filters
+    root.setLevel(level)

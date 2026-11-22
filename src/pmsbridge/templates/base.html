@@ -10,8 +10,14 @@
 <body>
   <header class="topbar">
     <a class="brand" href="/">pmsbridge</a>
-    {% if user and user.role == "admin" %}
-    <nav><a href="/admin/users">Users</a></nav>
+    {% if user %}
+    <nav>
+      <a href="/account/apps">Connected apps</a>
+      {% if user.role == "admin" %}
+      <a href="/admin/users">Users</a>
+      <a href="/admin/assistants">Assistants</a>
+      {% endif %}
+    </nav>
     {% endif %}
     {% if user and csrf_token %}
     <form class="signout" method="post" action="/logout">

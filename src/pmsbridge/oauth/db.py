@@ -1,8 +1,9 @@
-"""Database tables for the OAuth authorization server: clients, grants and authorization codes.
+"""Database tables for the OAuth authorization server: clients, grants, codes and tokens.
 
 A *client* is an AI assistant that registered itself. A *grant* is one person's consent for one
 client, with the PMS connections the person allowed. An *authorization code* is the short-lived,
-single-use value the client exchanges for tokens. Codes are stored only as SHA-256 hashes.
+single-use value the client exchanges for tokens. Codes and tokens are stored only as SHA-256
+hashes.
 """
 
 from datetime import datetime
@@ -60,6 +61,8 @@ class OAuthGrant(Base):
     resource: Mapped[str] = mapped_column(String(2048))
     created_at: Mapped[datetime] = mapped_column(UtcDateTime)
     revoked_at: Mapped[datetime | None] = mapped_column(UtcDateTime, default=None)
+    # Set whenever tokens are issued or refreshed under the grant (tokens themselves are purged).
+    last_used_at: Mapped[datetime | None] = mapped_column(UtcDateTime, default=None)
 
 
 class OAuthCode(Base):
@@ -81,3 +84,32 @@ class OAuthCode(Base):
     created_at: Mapped[datetime] = mapped_column(UtcDateTime)
     expires_at: Mapped[datetime] = mapped_column(UtcDateTime)
     used_at: Mapped[datetime | None] = mapped_column(UtcDateTime, default=None)
+
+
+class OAuthToken(Base):
+    """An access or refresh token, found by its SHA-256. A token is valid only while its grant is.
+
+    A refresh token that was used is marked with `replaced_by` (the hash of its successor) and
+    `revoked_at`; presenting it again is reuse, which revokes the whole grant.
+    """
+
+    __tablename__ = "oauth_tokens"
+    __table_args__ = (
+        CheckConstraint("kind IN ('access', 'refresh')", name="kind"),
+        Index("ix_oauth_tokens_grant_id", "grant_id"),
+        Index("ix_oauth_tokens_expires_at", "expires_at"),
+    )
+
+    token_hash: Mapped[str] = mapped_column(String(64), primary_key=True)
+    kind: Mapped[str] = mapped_column(String(8))
+    grant_id: Mapped[int] = mapped_column(ForeignKey("oauth_grants.id", ondelete="CASCADE"))
+    client_id: Mapped[str] = mapped_column(
+        ForeignKey("oauth_clients.client_id", ondelete="CASCADE")
+    )
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
+    resource: Mapped[str] = mapped_column(String(2048))
+    scope: Mapped[str] = mapped_column(String(64))
+    created_at: Mapped[datetime] = mapped_column(UtcDateTime)
+    expires_at: Mapped[datetime] = mapped_column(UtcDateTime)
+    revoked_at: Mapped[datetime | None] = mapped_column(UtcDateTime, default=None)
+    replaced_by: Mapped[str | None] = mapped_column(String(64), default=None)

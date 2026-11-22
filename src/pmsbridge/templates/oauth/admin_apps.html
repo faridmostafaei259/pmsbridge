@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+{% block title %}Assistants - pmsbridge{% endblock %}
+{% block content %}
+<section class="card wide">
+  <h1>Assistants</h1>
+  <p>Every approval anyone has given to an AI assistant. Cancelling one ends that assistant's access for that person at once.</p>
+  {% if notice %}
+  <p class="notice" role="status">{{ notice }}</p>
+  {% endif %}
+  {% if truncated %}
+  <p class="notice" role="status">Showing the most recent approvals only.</p>
+  {% endif %}
+  {% if rows %}
+  <table>
+    <thead>
+      <tr><th>Person</th><th>Assistant</th><th>Client id</th><th>Returns to</th><th>Approved</th><th>Last used</th><th>Connections</th><th>Actions</th></tr>
+    </thead>
+    <tbody>
+      {% for item, covers in rows %}
+      <tr>
+        <td>{{ item.email }}</td>
+        <td>{{ item.client_name }}</td>
+        <td><code>{{ item.client_id }}</code></td>
+        <td>{{ item.hosts | join(", ") }}</td>
+        <td>{{ item.approved_at.strftime("%Y-%m-%d %H:%M UTC") }}</td>
+        <td>{{ item.last_used_at.strftime("%Y-%m-%d %H:%M UTC") if item.last_used_at else "never" }}</td>
+        <td>{{ covers }}</td>
+        <td>
+          <form method="post" action="/admin/assistants/revoke">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <input type="hidden" name="user_id" value="{{ item.user_id }}">
+            <input type="hidden" name="client_id" value="{{ item.client_id }}">
+            <button type="submit">Revoke access</button>
+          </form>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p>No assistant is approved.</p>
+  {% endif %}
+</section>
+{% endblock %}

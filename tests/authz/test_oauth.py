@@ -4,6 +4,7 @@ import base64
 import hashlib
 import re
 from collections.abc import AsyncIterator, Callable
+from datetime import UTC, datetime, timedelta
 from urllib.parse import parse_qs, urlsplit
 
 import httpx
@@ -21,8 +22,9 @@ from pmsbridge.app import create_app
 from pmsbridge.core.crypto import generate_key
 from pmsbridge.core.settings import clear_settings_cache
 from pmsbridge.core.storage import reset_database, session, write_transaction
-from pmsbridge.oauth.db import OAuthGrant
-from pmsbridge.oauth.grants import redeem_code
+from pmsbridge.oauth.db import OAuthClient, OAuthGrant
+from pmsbridge.oauth.grants import redeem_code, revoke_grants
+from pmsbridge.oauth.tokens import validate_access_token
 
 BASE_URL = "https://pms.example.test"
 CALLBACK = "https://assistant.example.test/callback"
@@ -315,3 +317,244 @@ async def test_registering_a_client_gives_no_access_by_itself(
     async with session() as db:
         assert (await db.execute(select(OAuthGrant))).first() is None
     assert client_id
+
+
+async def access_token(client: httpx.AsyncClient, client_id: str) -> str:
+    """Approve as the signed-in person and exchange the code; returns the access token."""
+    code = await authorize(client, client_id)
+    response = await client.post(
+        "/oauth/token",
+        data={
+            "grant_type": "authorization_code",
+            "code": code,
+            "redirect_uri": CALLBACK,
+            "code_verifier": VERIFIER,
+            "client_id": client_id,
+        },
+    )
+    assert response.status_code == 200, response.text
+    return str(response.json()["access_token"])
+
+
+async def reset_password(browser: Browser, email: str) -> None:
+    link = await admin_users.reset_admin_password(email)
+    parts = urlsplit(link)
+    fresh = browser()
+    assert (await fresh.get(parts.path, params=parse_qs(parts.query))).status_code == 303
+    token = CSRF_FIELD.search((await fresh.get(parts.path)).text)
+    assert token
+    done = await fresh.post(
+        parts.path,
+        data={
+            "password": "a brand new fake passphrase",
+            "confirm": "a brand new fake passphrase",
+            "csrf_token": token.group(1),
+        },
+        headers={"Origin": BASE_URL},
+    )
+    assert done.status_code == 200
+
+
+ENDING = (
+    "disable",
+    "reset_two_factor",
+    "promote",
+    "demote",
+    "password_reset",
+    "two_factor_removed",
+    "client_expired",
+    "grant_revoked",
+    "setup_pending",
+)
+
+
+@pytest.mark.parametrize("ending", ENDING)
+async def test_every_way_of_ending_access_stops_the_token_at_once(
+    browser: Browser, accounts: dict[str, int], ending: str
+) -> None:
+    """The MCP endpoint's check fails right after the person is changed, and only for them."""
+    admin_side = ending in ("demote", "password_reset", "two_factor_removed")
+    target = accounts["admin2"] if admin_side else accounts["staff"]
+    credentials, secret = (SECOND_ADMIN, ADMIN_SECRET) if admin_side else (STAFF, None)
+    if ending == "reset_two_factor":
+        async with write_transaction() as db:
+            twofactor.add_totp(db, target, ADMIN_SECRET, 0)
+        secret = ADMIN_SECRET
+    client, other = browser(), browser()
+    await sign_in(client, credentials, secret)
+    await sign_in(other, OTHER)
+    client_id = await new_client(client)
+    mine = await access_token(client, client_id)
+    theirs = await access_token(other, client_id)
+    assert await validate_access_token(mine) is not None
+    actor = accounts["admin"]
+    if ending == "disable":
+        await management.disable_user(target, actor)
+    elif ending == "reset_two_factor":
+        await management.reset_two_factor(target, actor)
+    elif ending == "promote":
+        await management.change_role(target, "admin", actor)
+    elif ending == "demote":
+        await management.change_role(target, "staff", actor)
+    elif ending == "password_reset":
+        await reset_password(browser, SECOND_ADMIN[0])
+    elif ending == "two_factor_removed":
+        async with write_transaction() as db:
+            await twofactor.remove_two_factor(db, target)
+    elif ending == "client_expired":
+        async with write_transaction() as db:
+            await db.execute(
+                update(OAuthClient).values(last_used_at=datetime.now(UTC) - timedelta(days=91))
+            )
+    elif ending == "grant_revoked":
+        await revoke_grants(user_id=target)
+    else:
+        async with write_transaction() as db:
+            await db.execute(update(User).where(User.id == target).values(setup_pending=True))
+    assert await validate_access_token(mine) is None
+    if ending != "client_expired":
+        assert await validate_access_token(theirs) is not None
+
+
+async def test_a_disabled_person_cannot_use_the_token_even_without_grant_revocation(
+    browser: Browser, accounts: dict[str, int]
+) -> None:
+    client = browser()
+    await sign_in(client, STAFF)
+    token = await access_token(client, await new_client(client))
+    async with write_transaction() as db:
+        await db.execute(update(User).where(User.id == accounts["staff"]).values(is_active=False))
+    assert await validate_access_token(token) is None
+
+
+async def test_a_staff_member_cannot_cancel_someone_elses_assistant(
+    browser: Browser, accounts: dict[str, int]
+) -> None:
+    one, two = browser(), browser()
+    await sign_in(one, STAFF)
+    await sign_in(two, OTHER)
+    client_id = await new_client(one)
+    mine, theirs = await access_token(one, client_id), await access_token(two, client_id)
+    page = await two.get("/account/apps")
+    token = CSRF_FIELD.search(page.text)
+    assert token
+    # Cancelling "the assistant" only ever touches the signed-in person's own approvals.
+    done = await two.post(
+        "/account/apps/revoke",
+        data={
+            "client_id": client_id,
+            "csrf_token": token.group(1),
+            "user_id": str(accounts["staff"]),
+        },
+        headers={"Origin": BASE_URL},
+    )
+    assert done.status_code == 303
+    assert await validate_access_token(theirs) is None
+    assert await validate_access_token(mine) is not None
+    # The page of one person never lists the other's approvals.
+    assert "Example Assistant" in (await one.get("/account/apps")).text
+    assert "Example Assistant" not in (await two.get("/account/apps")).text
+
+
+async def test_the_assistants_page_and_its_revoke_need_an_administrator(
+    browser: Browser, accounts: dict[str, int]
+) -> None:
+    visitor, staff = browser(), browser()
+    await sign_in(staff, STAFF)
+    client_id = await new_client(staff)
+    mine = await access_token(staff, client_id)
+    assert (await visitor.get("/admin/assistants")).status_code == 303
+    assert (await staff.get("/admin/assistants")).status_code == 403
+    data = {"user_id": str(accounts["staff"]), "client_id": client_id}
+    assert (
+        await visitor.post("/admin/assistants/revoke", data=data, headers={"Origin": BASE_URL})
+    ).status_code == 401
+    token = CSRF_FIELD.search((await staff.get("/account/apps")).text)
+    assert token
+    forged = await staff.post(
+        "/admin/assistants/revoke",
+        data={**data, "csrf_token": token.group(1)},
+        headers={"Origin": BASE_URL},
+    )
+    assert forged.status_code == 403
+    assert await validate_access_token(mine) is not None
+
+
+async def test_an_administrator_cancels_an_assistant_after_confirming_identity(
+    browser: Browser, accounts: dict[str, int]
+) -> None:
+    staff, admin = browser(), browser()
+    await sign_in(staff, STAFF)
+    await sign_in(admin, ADMIN, ADMIN_SECRET)
+    client_id = await new_client(staff)
+    mine = await access_token(staff, client_id)
+    listing = await admin.get("/admin/assistants")
+    assert listing.status_code == 200 and STAFF[0] in listing.text
+    token = CSRF_FIELD.search(listing.text)
+    assert token
+    data = {
+        "user_id": str(accounts["staff"]),
+        "client_id": client_id,
+        "csrf_token": token.group(1),
+    }
+    first = await admin.post("/admin/assistants/revoke", data=data, headers={"Origin": BASE_URL})
+    assert first.status_code == 200 and "Confirm it is you" in first.text
+    assert await validate_access_token(mine) is not None
+    wrong = await admin.post(
+        "/admin/assistants/revoke",
+        data={**data, "reauth": "1", "password": "wrong password here", "code": "000000"},
+        headers={"Origin": BASE_URL},
+    )
+    assert wrong.status_code == 400
+    assert await validate_access_token(mine) is not None
+    done = await admin.post(
+        "/admin/assistants/revoke",
+        data={
+            **data,
+            "reauth": "1",
+            "password": ADMIN[1],
+            "code": totp.code_for(ADMIN_SECRET, totp.current_step() + 1),
+        },
+        headers={"Origin": BASE_URL},
+    )
+    assert done.status_code == 303
+    assert await validate_access_token(mine) is None
+
+
+async def test_an_oversized_user_id_is_refused_by_the_assistants_revoke(
+    browser: Browser, accounts: dict[str, int]
+) -> None:
+    staff, admin = browser(), browser()
+    await sign_in(staff, STAFF)
+    await sign_in(admin, ADMIN, ADMIN_SECRET)
+    client_id = await new_client(staff)
+    mine = await access_token(staff, client_id)
+    token = CSRF_FIELD.search((await admin.get("/admin/assistants")).text)
+    assert token
+    for bad in ("1" * 25, "0", "01", "-1", "\u0661"):
+        response = await admin.post(
+            "/admin/assistants/revoke",
+            data={
+                "user_id": bad,
+                "client_id": client_id,
+                "csrf_token": token.group(1),
+                "reauth": "1",
+                "password": ADMIN[1],
+                "code": totp.code_for(ADMIN_SECRET, totp.current_step() + 1),
+            },
+            headers={"Origin": BASE_URL},
+        )
+        assert response.status_code == 400, bad
+    assert await validate_access_token(mine) is not None
+
+
+async def test_the_assistants_page_shows_each_client_id(
+    browser: Browser, accounts: dict[str, int]
+) -> None:
+    staff, admin = browser(), browser()
+    await sign_in(staff, STAFF)
+    await sign_in(admin, ADMIN, ADMIN_SECRET)
+    client_id = await new_client(staff)
+    await access_token(staff, client_id)
+    listing = await admin.get("/admin/assistants")
+    assert f"<code>{client_id}</code>" in listing.text

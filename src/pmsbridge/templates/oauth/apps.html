@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+{% block title %}Connected apps - pmsbridge{% endblock %}
+{% block content %}
+<section class="card wide">
+  <h1>Connected apps</h1>
+  <p>These are the AI assistants you have approved. Each one acts as you, and can use only the PMS connections listed here.</p>
+  {% if error %}
+  <p class="error" role="alert">{{ error }}</p>
+  {% endif %}
+  {% if notice %}
+  <p class="notice" role="status">{{ notice }}</p>
+  {% endif %}
+  {% if truncated %}
+  <p class="notice" role="status">Showing the most recent approvals only.</p>
+  {% endif %}
+  {% for item, covers, picked in rows %}
+  <h2>{{ item.client_name }}</h2>
+  <p class="muted">The name is chosen by the assistant itself. pmsbridge has not verified it.</p>
+  <table>
+    <tbody>
+      <tr><th>Returns to</th><td>{{ item.hosts | join(", ") }}</td></tr>
+      <tr><th>Approved</th><td>{{ item.approved_at.strftime("%Y-%m-%d %H:%M UTC") }}</td></tr>
+      <tr><th>Last used</th><td>{{ item.last_used_at.strftime("%Y-%m-%d %H:%M UTC") if item.last_used_at else "never" }}</td></tr>
+      <tr><th>Connections</th><td>{{ covers }}</td></tr>
+    </tbody>
+  </table>
+  {% if connections %}
+  <form method="post" action="/account/apps/connections">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input type="hidden" name="client_id" value="{{ item.client_id }}">
+    <h3>Choose connections</h3>
+    <p><label><input type="radio" name="mode" value="selected"{% if not item.all_connections %} checked{% endif %}> Only the connections I tick</label></p>
+    {% for connection in connections %}
+    <p class="indent"><label><input type="checkbox" name="connection" value="{{ connection.id }}"{% if connection.id in picked %} checked{% endif %}> {{ connection.label }}</label></p>
+    {% endfor %}
+    <p><label><input type="radio" name="mode" value="all"{% if item.all_connections %} checked{% endif %}> All of my connections, including ones added later</label></p>
+    <button type="submit">Save connections</button>
+  </form>
+  {% else %}
+  <p>No PMS connections yet. Once you have connections, you can choose here which ones this assistant may use.</p>
+  {% endif %}
+  <form method="post" action="/account/apps/revoke">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input type="hidden" name="client_id" value="{{ item.client_id }}">
+    <button type="submit">Revoke access</button>
+  </form>
+  {% else %}
+  <p>You have not approved any assistants.</p>
+  {% endfor %}
+</section>
+{% endblock %}

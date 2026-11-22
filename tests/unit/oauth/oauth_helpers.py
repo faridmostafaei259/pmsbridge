@@ -97,3 +97,60 @@ async def approve(
         data={**hidden, "csrf_token": page_token(page.text), "decision": decision, **extra},
         headers={"Origin": BASE_URL},
     )
+
+
+BOTH_GRANTS = ["authorization_code", "refresh_token"]
+TOKEN_HEADERS = {"Content-Type": "application/x-www-form-urlencoded"}
+
+
+async def get_code(browser: httpx.AsyncClient, client_id: str, **overrides: str | None) -> str:
+    response = await approve(browser, authorize_params(client_id, **overrides))
+    assert response.status_code == 303, response.text
+    return location_query(response)["code"]
+
+
+def code_form(
+    client_id: str, code: str, *, anonymous: bool = False, **overrides: str | None
+) -> dict[str, str]:
+    form: dict[str, str | None] = {
+        "grant_type": "authorization_code",
+        "code": code,
+        "redirect_uri": CALLBACK,
+        "code_verifier": VERIFIER,
+        "client_id": None if anonymous else client_id,
+        **overrides,
+    }
+    return {name: value for name, value in form.items() if value is not None}
+
+
+async def token_request(
+    client: httpx.AsyncClient, form: dict[str, str], headers: dict[str, str] | None = None
+) -> httpx.Response:
+    return await client.post("/oauth/token", data=form, headers=headers)
+
+
+async def connect(
+    browser: httpx.AsyncClient, api: httpx.AsyncClient, **registration: object
+) -> tuple[str, dict[str, str]]:
+    """Register a client with refresh tokens, approve it and exchange the code.
+
+    Returns the client id and the token response.
+    """
+    registration.setdefault("grant_types", BOTH_GRANTS)
+    client_id = str((await register_client(api, **registration))["client_id"])
+    code = await get_code(browser, client_id)
+    response = await token_request(api, code_form(client_id, code))
+    assert response.status_code == 200, response.text
+    return client_id, response.json()  # type: ignore[no-any-return]
+
+
+async def register_secret_client(
+    api: httpx.AsyncClient, method: str = "client_secret_post"
+) -> tuple[str, str]:
+    """Register a confidential client that may also refresh; returns (client id, secret)."""
+    created = await register_client(
+        api,
+        grant_types=BOTH_GRANTS,
+        token_endpoint_auth_method=method,
+    )
+    return str(created["client_id"]), str(created["client_secret"])

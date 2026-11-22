@@ -106,7 +106,7 @@ async def reset_admin_password(email: str) -> str:
     return link_for("/reset", token, base_url)
 
 
-def _run(work: Callable[[], Coroutine[object, object, str]]) -> int:
+def run_action(work: Callable[[], Coroutine[object, object, str]]) -> int:
     """Run an action. Its text goes to standard output; every failure is a short message."""
     try:
         output = asyncio.run(work())
@@ -193,31 +193,31 @@ def _args_email(args: argparse.Namespace) -> str:
 
 
 def _run_create_admin(args: argparse.Namespace) -> int:
-    return _run(lambda: create_admin(_args_email(args)))
+    return run_action(lambda: create_admin(_args_email(args)))
 
 
 def _run_reset_admin_password(args: argparse.Namespace) -> int:
-    return _run(lambda: reset_admin_password(_args_email(args)))
+    return run_action(lambda: reset_admin_password(_args_email(args)))
 
 
 def _run_list(_args: argparse.Namespace) -> int:
-    return _run(list_users)
+    return run_action(list_users)
 
 
 def _run_invite(args: argparse.Namespace) -> int:
-    return _run(lambda: invite(_args_email(args), str(args.role)))  # pyright: ignore[reportAny]
+    return run_action(lambda: invite(_args_email(args), str(args.role)))  # pyright: ignore[reportAny]
 
 
 def _run_disable(args: argparse.Namespace) -> int:
-    return _run(lambda: disable(_args_email(args)))
+    return run_action(lambda: disable(_args_email(args)))
 
 
 def _run_enable(args: argparse.Namespace) -> int:
-    return _run(lambda: enable(_args_email(args)))
+    return run_action(lambda: enable(_args_email(args)))
 
 
 def _run_reset_two_factor(args: argparse.Namespace) -> int:
-    return _run(lambda: reset_two_factor(_args_email(args)))
+    return run_action(lambda: reset_two_factor(_args_email(args)))
 
 
 def register(
