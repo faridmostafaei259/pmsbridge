@@ -163,7 +163,8 @@ class Settings(BaseSettings):
             "of the form `<id>:<key>`, where the key is 32 random bytes in base64. The first "
             "entry encrypts new data; later entries are old keys kept only to read older data. "
             "If you lose these keys, the stored credentials cannot be recovered, so back them "
-            "up. To change keys, run `pmsbridge rotate-keys`."
+            "up. Key rotation commands arrive with the `pmsbridge rotate-keys` host command in a "
+            "later release; until then keep the single key."
         ),
         json_schema_extra={
             "required_in_production": True,

@@ -33,16 +33,11 @@ def test_an_argument_that_cannot_be_rendered_does_not_break_the_caller(
     assert "unformattable" in capsys.readouterr().out
 
 
-@pytest.mark.xfail(
-    strict=True,
-    raises=RuntimeError,
-    reason="open audit finding: the filter contains only four exception types",
-)
 def test_gap_any_error_while_rendering_an_argument_is_contained(
     secure_settings: Settings, capsys: pytest.CaptureFixture[str]
 ) -> None:
     configure_logging(secure_settings)
-    # Raised by user code inside __str__. Today it escapes from the log call into the caller
-    # (and its message is not masked at that point).
+    # Raised by user code inside __str__. It must not escape from the log call into the caller,
+    # and its text must not be written.
     logging.getLogger("security.test").info("value %s", _FailsToRender(RuntimeError("x")))
     assert "unformattable" in capsys.readouterr().out

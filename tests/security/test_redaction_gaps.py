@@ -1,9 +1,7 @@
-"""Redaction behaviour, split into what is enforced today and what is a known, open gap.
+"""Redaction behaviour: the common shapes, and the gaps found by the security audit (now closed).
 
-The first group must always pass. The second group is marked `xfail(strict=True)`: each case is a
-confirmed gap from the security audit. When the gap is fixed the case starts to pass, the
-strict marker turns that into a failure, and the marker must be removed so the case becomes a
-normal regression test.
+Every case here must always pass. The second group holds the audit's confirmed gaps; they were
+`xfail(strict=True)` until the redaction was fixed, and are normal regression tests now.
 """
 
 import base64
@@ -90,17 +88,14 @@ def test_masking_is_fast_on_hostile_input() -> None:
     scrub_text(("password:" + " " * 500) * 20)
 
 
-# ---- Known gaps (security audit) ----
+# ---- Gaps found by the security audit (closed) ----
 #
-# Each case is its own `pytest.param` with a strict `xfail` limited to `AssertionError`, so a
-# partial fix shows up as the cases that now pass, and any other failure stays a real failure.
-# Mapping keys (`redact`) and free text (`scrub_text`) are asserted separately.
-
-GAP = pytest.mark.xfail(strict=True, raises=AssertionError, reason="open audit finding")
+# Each case is its own `pytest.param`. Mapping keys (`redact`) and free text (`scrub_text`) are
+# asserted separately.
 
 
 def gap(*values: str) -> list[object]:
-    return [pytest.param(value, marks=GAP, id=value[:40]) for value in values]
+    return [pytest.param(value, id=value[:40]) for value in values]
 
 
 @pytest.mark.parametrize(
@@ -172,7 +167,6 @@ def test_gap_more_secret_key_names_are_masked_in_text(key: str) -> None:
     assert MARKER not in scrub_text(f"{key}={MARKER}")
 
 
-@pytest.mark.xfail(strict=True, raises=AssertionError, reason="open audit finding")
 def test_gap_an_oauth_code_in_a_query_string_is_masked() -> None:
     assert MARKER not in scrub_text(f"GET /authorize/callback?code={MARKER}&state=abc")
 
@@ -182,7 +176,6 @@ def _b64url(data: dict[str, object]) -> str:
     return base64.urlsafe_b64encode(raw).rstrip(b"=").decode()
 
 
-@pytest.mark.xfail(strict=True, raises=AssertionError, reason="open audit finding")
 def test_gap_a_bare_jwt_in_text_is_masked() -> None:
     # Built at run time so that no token-shaped string exists in the source tree.
     signature = base64.urlsafe_b64encode(bytes(range(32))).rstrip(b"=").decode()
@@ -190,7 +183,6 @@ def test_gap_a_bare_jwt_in_text_is_masked() -> None:
     assert jwt not in scrub_text(f"token was {jwt} for user")
 
 
-@pytest.mark.xfail(strict=True, raises=AssertionError, reason="open audit finding")
 def test_gap_a_key_entry_after_a_word_character_is_masked() -> None:
     entry = "k_sec1:" + "A" * 43 + "="
     assert not re.search(r"A{43}", scrub_text(entry))
