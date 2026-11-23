@@ -106,7 +106,7 @@ The earliest check-in comes first (set check_in_from to leave out past bookings)
 | Argument | Type | Required | Description |
 |---|---|---|---|
 | `listing_id` | string (optional) | no | Only reservations for this listing id (from list_listings). |
-| `statuses` | list of value (optional) | no | Only reservations in one of these statuses: inquiry, pending, confirmed, checked_in, checked_out, cancelled, declined, expired or unknown. Omit for every status. |
+| `statuses` | list of `inquiry` or `pending` or `confirmed` or `checked_in` or `checked_out` or `cancelled` or `declined` or `expired` or `unknown` (optional) | no | Only reservations in one of these statuses: inquiry, pending, confirmed, checked_in, checked_out, cancelled, declined, expired or unknown. Omit for every status. |
 | `check_in_from` | string (optional) | no | Check-in on or after this day, a date written YYYY-MM-DD. |
 | `check_in_to` | string (optional) | no | Check-in on or before this day, a date written YYYY-MM-DD. |
 | `check_out_from` | string (optional) | no | Check-out on or after this day, a date written YYYY-MM-DD. |

@@ -15,6 +15,7 @@ from pmsbridge.app import create_app
 from pmsbridge.core.crypto import generate_key
 from pmsbridge.core.settings import clear_settings_cache
 from pmsbridge.core.storage import reset_database
+from pmsbridge.mcp.framework import reset_rate_limits
 
 FEATURES = ("pmsbridge.core.web", "pmsbridge.oauth.web", "pmsbridge.mcp.server")
 
@@ -28,6 +29,11 @@ def _environment(monkeypatch: pytest.MonkeyPatch) -> None:
         passwords, "_hasher", PasswordHasher(time_cost=1, memory_cost=8, parallelism=1)
     )
     monkeypatch.setattr(passwords, "_dummy_hash", None)
+
+
+@pytest.fixture(autouse=True)
+def _fresh_rate_limits() -> None:
+    reset_rate_limits()
 
 
 @pytest.fixture

@@ -44,8 +44,39 @@ example `guesty_`) only work with connections to that system.
 """
 
 
-def _kind(schema: Mapping[str, object]) -> str:
-    """A short description of a JSON schema type."""
+def _resolve(
+    schema: Mapping[str, object], defs: Mapping[str, object], seen: frozenset[str]
+) -> tuple[Mapping[str, object], frozenset[str]] | None:
+    """Follow a local `$ref` into `$defs`. None when it cannot be followed (missing or circular).
+
+    Returns the schema itself, with the names of the definitions followed so far, when it has no
+    `$ref`.
+    """
+    while isinstance(ref := schema.get("$ref"), str):
+        name = ref.removeprefix("#/$defs/")
+        target = defs.get(name) if ref.startswith("#/$defs/") else None
+        if name in seen or not isinstance(target, dict):
+            return None
+        seen = seen | {name}
+        schema = {**target, **{k: v for k, v in schema.items() if k != "$ref"}}
+    return schema, seen
+
+
+def _kind(
+    schema: Mapping[str, object],
+    defs: Mapping[str, object] | None = None,
+    seen: frozenset[str] = frozenset(),
+) -> str:
+    """A short description of a JSON schema type.
+
+    `defs` is the schema's `$defs`; `seen` holds the definitions being followed, so a definition
+    that refers to itself ends as "value" instead of recursing forever.
+    """
+    defs = defs or {}
+    resolved = _resolve(schema, defs, seen)
+    if resolved is None:
+        return "value"
+    schema, seen = resolved
     if "enum" in schema:
         values = schema["enum"]
         if isinstance(values, list):
@@ -53,14 +84,16 @@ def _kind(schema: Mapping[str, object]) -> str:
     for key in ("anyOf", "oneOf"):
         options = schema.get(key)
         if isinstance(options, list):
-            names = [_kind(option) for option in options if option.get("type") != "null"]
+            names = [
+                _kind(option, defs, seen) for option in options if option.get("type") != "null"
+            ]
             optional = any(option.get("type") == "null" for option in options)
             text = " or ".join(dict.fromkeys(names)) or "value"
             return f"{text} (optional)" if optional else text
     kind = schema.get("type")
     if kind == "array":
         items = schema.get("items")
-        inner = _kind(items) if isinstance(items, dict) else "value"
+        inner = _kind(items, defs, seen) if isinstance(items, dict) else "value"
         return f"list of {inner}"
     if isinstance(kind, str):
         return kind
@@ -79,6 +112,8 @@ def _parameters(schema: Mapping[str, object]) -> str:
     properties = schema.get("properties")
     if not isinstance(properties, dict) or not properties:
         return "This tool takes no arguments.\n"
+    raw_defs = schema.get("$defs")
+    defs = raw_defs if isinstance(raw_defs, dict) else {}
     required = schema.get("required")
     needed = set(required) if isinstance(required, list) else set()
     lines = ["| Argument | Type | Required | Description |", "|---|---|---|---|"]
@@ -87,7 +122,7 @@ def _parameters(schema: Mapping[str, object]) -> str:
             continue
         description = _cell(str(spec.get("description", "")))
         lines.append(
-            f"| `{name}` | {_cell(_kind(spec))} | {'yes' if name in needed else 'no'} "
+            f"| `{name}` | {_cell(_kind(spec, defs))} | {'yes' if name in needed else 'no'} "
             f"| {description} |"
         )
     return "\n".join(lines) + "\n"

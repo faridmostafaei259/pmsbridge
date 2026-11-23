@@ -92,8 +92,27 @@ async def test_an_ambiguous_label_is_not_guessed(app: FastAPI) -> None:
     token, _ = await mint_token(user, connections=ids)
     ctx = await context_for(token)
     assert (await resolve_connection(ctx, "North")).label == "North"
-    with pytest.raises(ToolRefusedError):
+    with pytest.raises(ToolRefusedError) as problem:
         await resolve_connection(ctx, "NORTH")
+    assert problem.value.code == "ambiguous_connection"
+    assert str(problem.value) == (
+        'That name matches several connections: "North", "north". Use the id or the exact name.'
+    )
+
+
+async def test_an_ambiguous_label_names_only_allowed_connections(app: FastAPI) -> None:
+    user = await seed_user()
+    first = await seed_connection("North")
+    second = await seed_connection("NORTH")
+    await seed_connection("north")  # exists but is not allowed
+    token, _ = await mint_token(user, connections=(first, second))
+    ctx = await context_for(token)
+    with pytest.raises(ToolRefusedError) as problem:
+        await resolve_connection(ctx, "nOrTh")
+    assert str(problem.value) == (
+        'That name matches several connections: "NORTH", "North". Use the id or the exact name.'
+    )
+    assert '"north"' not in str(problem.value)
 
 
 async def test_a_connection_that_is_not_allowed_looks_like_one_that_does_not_exist(

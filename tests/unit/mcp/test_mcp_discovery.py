@@ -207,3 +207,35 @@ def test_tool_docs_show_parameters_and_changes(extra_modules: Path) -> None:
     assert "| `limit` | integer (optional) | no |" in text
     assert "| `connection` | string (optional) | no |" in text
     assert "Add a note.\n\nSecond paragraph | with a pipe." in text
+
+
+DEFS = {
+    "Status": {"enum": ["open", "closed"], "type": "string"},
+    "Loop": {"type": "array", "items": {"$ref": "#/$defs/Loop"}},
+    "A": {"$ref": "#/$defs/B"},
+    "B": {"$ref": "#/$defs/A"},
+}
+
+
+def test_kind_follows_a_reference_to_an_enum() -> None:
+    kind = load_generator()._kind
+    assert kind({"$ref": "#/$defs/Status"}, DEFS) == "`open` or `closed`"
+
+
+def test_kind_follows_an_array_of_references() -> None:
+    kind = load_generator()._kind
+    schema = {"anyOf": [{"type": "array", "items": {"$ref": "#/$defs/Status"}}, {"type": "null"}]}
+    assert kind(schema, DEFS) == "list of `open` or `closed` (optional)"
+
+
+def test_kind_does_not_fail_on_a_missing_or_foreign_reference() -> None:
+    kind = load_generator()._kind
+    assert kind({"$ref": "#/$defs/Gone"}, DEFS) == "value"
+    assert kind({"$ref": "#/$defs/Status"}) == "value"
+    assert kind({"$ref": "https://example.test/schema"}, DEFS) == "value"
+
+
+def test_kind_stops_on_a_definition_that_refers_to_itself() -> None:
+    kind = load_generator()._kind
+    assert kind({"$ref": "#/$defs/Loop"}, DEFS) == "list of value"
+    assert kind({"$ref": "#/$defs/A"}, DEFS) == "value"

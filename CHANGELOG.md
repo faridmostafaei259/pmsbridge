@@ -55,8 +55,11 @@ All notable changes to this project are documented here. The format follows
 - Generated tool reference and a guide for connecting an AI assistant.
 - Guesty listings (read only): `list_listings`, `get_listing`, `get_listing_details` and `list_listing_photos` let an AI assistant list properties, look one up, read its descriptions, amenities and check-in instructions, and see its photos. Guesty's staff-only listing text is never read.
 - Guesty reservations (read only): `list_reservations` (filters for property, status, check-in, check-out, booking date and confirmation code, with paging) and `get_reservation` (adds the guest's name, email and phone and the balance due when Guesty provides them). Door and lock codes are never read.
+- Each AI assistant approval is limited to 60 tool calls a minute, of which 10 may change data. An assistant over the limit is told how many seconds to wait.
 
 ### Changed
+- A connection name that matches several allowed connections only by upper or lower case gets a clear message listing them.
+- The tool reference shows the allowed values for list arguments such as reservation statuses.
 - Replacing a connection's credentials keeps its id, so approved AI assistants keep working, and returns a connection that needed attention to working.
 - Changing which connections an assistant may use keeps connections that are turned off or need attention in its approval.
 - Request log lines from the HTTP libraries are no longer written at INFO, so query strings stay out of the logs.
@@ -65,6 +68,8 @@ All notable changes to this project are documented here. The format follows
 - Newly registered assistants never get a client id that starts with a minus sign, which the `--client` option of `oauth revoke-ai-access` could not accept; `--client=<id>` also works for older ids.
 
 ### Security
+- `/mcp` refuses browser requests whose `Origin` header is not this server's own address (error 403).
+- Calls refused by the per-approval limit are recorded at most once a minute per approval, so a flood cannot grow the tool-call record.
 - An AI assistant asking for a connection it was not approved for gets the same answer as for one that does not exist, and no other connection's name or id appears in a tool answer.
 - Adding a connection checks for an already-connected key before any Guesty token is requested, and adds run one at a time, so a double submit spends one token. Replacing credentials runs under the connection lock and does nothing when the credentials are unchanged.
 - A Guesty token requested with credentials that were replaced meanwhile, including from the command line, is never stored over the new key's token. A token that was issued but could not be saved is kept and saved before another is requested; a token request that does not finish within 30 seconds counts as failed.

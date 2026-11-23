@@ -15,6 +15,10 @@ this order, for every call:
 10. writes one audit entry (who, connection, tool, outcome, time; never arguments or results);
 11. marks the tool read-only or as a change in its MCP annotations.
 
+Before step 1, a per-approval rate limit applies (`RateLimiter`): 60 calls a minute for all tools
+and 10 a minute for tools that change data, so a stolen token or a runaway assistant cannot flood
+the server or the audit record.
+
 A tool function takes a `ToolCall` (or a `ToolContext` for `account_tool`) as its first argument.
 Its other arguments become the tool's parameters; `pms_tool` adds the optional `connection`
 parameter itself.
@@ -23,7 +27,10 @@ parameter itself.
 import asyncio
 import inspect
 import logging
+import math
 import time
+import weakref
+from collections import OrderedDict
 from collections.abc import AsyncGenerator, Awaitable, Callable
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
@@ -68,6 +75,17 @@ MAX_ERROR_CHARS: Final = 500
 DEFAULT_LIMIT: Final = 25
 MAX_LIMIT: Final = 100
 
+# Per-approval (grant) limits: calls per minute and the burst that may be made at once.
+CALLS_PER_MINUTE: Final = 60
+CALLS_BURST: Final = 20
+WRITES_PER_MINUTE: Final = 10
+WRITES_BURST: Final = 5
+MAX_TRACKED_GRANTS: Final = 10_000
+# A grant not seen for this long has refilled every bucket, so forgetting it changes nothing.
+IDLE_FORGET_SECONDS: Final = 120.0
+# At most one audit entry per grant in this time for refused-by-rate-limit calls.
+RATE_AUDIT_INTERVAL_SECONDS: Final = 60.0
+
 CONNECTION_PARAMETER: Final = "connection"
 CONNECTION_DESCRIPTION: Final = (
     "The connection to use: its name or id as shown by list_connections. Optional when only one "
@@ -101,6 +119,121 @@ def clamp_limit(
     if limit is None:
         return default
     return max(1, min(limit, maximum))
+
+
+@dataclass(slots=True)
+class _Bucket:
+    capacity: float
+    per_second: float
+    tokens: float
+    updated: float
+
+    def refill(self, now: float) -> None:
+        elapsed = max(0.0, now - self.updated)
+        self.tokens = min(self.capacity, self.tokens + elapsed * self.per_second)
+        self.updated = now
+
+    def wait(self) -> float:
+        """Seconds until one call may be made (0 when one may be made now)."""
+        return 0.0 if self.tokens >= 1.0 else (1.0 - self.tokens) / self.per_second
+
+
+@dataclass(slots=True)
+class _GrantBuckets:
+    calls: _Bucket
+    writes: _Bucket
+    last_seen: float
+    last_audited: float | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class RateDecision:
+    """The answer of `RateLimiter.check`: `wait_seconds` is 0 when the call may go ahead."""
+
+    wait_seconds: float = 0.0
+    audit: bool = False
+    # Which limit set the wait: "calls" (all tools) or "writes" (changes only); "" when allowed.
+    bucket: str = ""
+
+    @property
+    def allowed(self) -> bool:
+        return self.wait_seconds <= 0.0
+
+
+class RateLimiter:
+    """Token buckets per grant (approval): one for all calls, one more for calls that change data.
+
+    Memory is bounded: a grant that has been idle long enough to be fully refilled is forgotten,
+    and at most `max_grants` are tracked (the least recently used one is dropped first). A call
+    that is refused uses up nothing, so waiting is always enough.
+    """
+
+    def __init__(
+        self, *, max_grants: int = MAX_TRACKED_GRANTS, clock: Callable[[], float] = time.monotonic
+    ) -> None:
+        self._max = max_grants
+        self._clock = clock
+        self._grants: OrderedDict[int, _GrantBuckets] = OrderedDict()
+
+    def tracked(self) -> int:
+        return len(self._grants)
+
+    def _forget_idle(self, now: float) -> None:
+        while self._grants:
+            oldest = next(iter(self._grants.values()))
+            if now - oldest.last_seen < IDLE_FORGET_SECONDS:
+                break
+            self._grants.popitem(last=False)
+
+    def _entry(self, grant_id: int, now: float) -> _GrantBuckets:
+        entry = self._grants.get(grant_id)
+        if entry is None:
+            self._forget_idle(now)
+            while len(self._grants) >= self._max:
+                self._grants.popitem(last=False)
+            entry = _GrantBuckets(
+                calls=_Bucket(CALLS_BURST, CALLS_PER_MINUTE / 60, CALLS_BURST, now),
+                writes=_Bucket(WRITES_BURST, WRITES_PER_MINUTE / 60, WRITES_BURST, now),
+                last_seen=now,
+            )
+            self._grants[grant_id] = entry
+        self._grants.move_to_end(grant_id)
+        entry.last_seen = now
+        return entry
+
+    def check(self, grant_id: int, *, write: bool) -> RateDecision:
+        """Use up one call for the grant, or say how long to wait."""
+        now = self._clock()
+        entry = self._entry(grant_id, now)
+        entry.calls.refill(now)
+        entry.writes.refill(now)
+        wait, bucket = entry.calls.wait(), "calls"
+        if write and entry.writes.wait() > wait:
+            wait, bucket = entry.writes.wait(), "writes"
+        if wait <= 0.0:
+            entry.calls.tokens -= 1.0
+            if write:
+                entry.writes.tokens -= 1.0
+            return RateDecision()
+        due = entry.last_audited is None or now - entry.last_audited >= RATE_AUDIT_INTERVAL_SECONDS
+        if due:
+            entry.last_audited = now
+        return RateDecision(wait_seconds=wait, audit=due, bucket=bucket)
+
+
+_limiter = RateLimiter()
+_tool_counts: weakref.WeakKeyDictionary[MCPServer, int] = weakref.WeakKeyDictionary()
+
+
+def reset_rate_limits() -> None:
+    """Forget every grant's counters. Only tests call this, to start each one with full buckets."""
+    global _limiter  # noqa: PLW0603
+    _limiter = RateLimiter()
+
+
+def tool_count(mcp: MCPServer) -> int:
+    """How many tools were registered on `mcp` through this framework."""
+    return _tool_counts.get(mcp, 0)
 
 
 @dataclass(slots=True)
@@ -192,6 +325,21 @@ async def _identify(run: _Run) -> ToolContext:
     principal = current_principal()
     if principal is None:
         raise ToolRefusedError("Sign-in is required to use this tool.", "not_signed_in")
+    decision = _limiter.check(principal.grant_id, write=run.write)
+    if not decision.allowed:
+        if decision.audit:
+            # Named without a database read, so a flood costs one entry at most.
+            run.ctx = ToolContext(
+                principal.user_id, principal.client_id, principal.grant_id, frozenset()
+            )
+        seconds = max(1, math.ceil(decision.wait_seconds - 1e-9))
+        what = "changes" if decision.bucket == "writes" else "requests"
+        unit = "second" if seconds == 1 else "seconds"
+        raise ToolRefusedError(
+            f"This AI assistant is making {what} too quickly. Wait about {seconds} "
+            f"{unit}, then try again.",
+            "rate_limited",
+        )
     run.ctx = await build_context(principal)
     return run.ctx
 
@@ -261,6 +409,7 @@ def _publish(
             open_world_hint=True,
         ),
     )
+    _tool_counts[mcp] = _tool_counts.get(mcp, 0) + 1
 
 
 def account_tool(

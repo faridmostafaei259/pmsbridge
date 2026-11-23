@@ -119,7 +119,10 @@ def _names(options: list[ResolvedConnection]) -> str:
     return ", ".join(shown) + (f" and {more} more" if more > 0 else "")
 
 
-def _pick(options: list[ResolvedConnection], wanted: str) -> ResolvedConnection | None:
+def _pick(
+    options: list[ResolvedConnection], wanted: str
+) -> ResolvedConnection | list[ResolvedConnection] | None:
+    """The one connection named, the several that match only when the case is ignored, or None."""
     for item in options:
         if item.ref.connection_id == wanted:
             return item
@@ -127,7 +130,9 @@ def _pick(options: list[ResolvedConnection], wanted: str) -> ResolvedConnection 
         if item.ref.label == wanted:
             return item
     folded = [item for item in options if item.ref.label.casefold() == wanted.casefold()]
-    return folded[0] if len(folded) == 1 else None
+    if len(folded) == 1:
+        return folded[0]
+    return folded or None
 
 
 async def resolve_connection_state(ctx: ToolContext, connection: str | None) -> ResolvedConnection:
@@ -154,6 +159,13 @@ async def resolve_connection_state(ctx: ToolContext, connection: str | None) -> 
             "connection_required",
         )
     found = _pick(options, wanted)
+    if isinstance(found, list):
+        # Only allowed connections are named, so this reveals nothing about others.
+        raise ToolRefusedError(
+            f"That name matches several connections: {_names(found)}. "
+            "Use the id or the exact name.",
+            "ambiguous_connection",
+        )
     if found is None:
         # The same answer whether the connection does not exist or is not allowed.
         available = f" Available connections: {_names(options)}." if options else ""

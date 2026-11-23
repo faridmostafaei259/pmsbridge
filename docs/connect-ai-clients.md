@@ -77,6 +77,8 @@ than 90 days after you approved them). After that you approve again.
 | "The connection ... is not available right now (it is turned off)" | An administrator turned the connection off on the **Connections** page. Ask them to turn it on again. |
 | "Several connections are available" | You approved more than one connection, so the assistant must say which one. Tell it the connection name, or ask it to run `list_connections` first. |
 | "The connection ... needs attention" | The PMS rejected pmsbridge's credentials. An administrator must fix it on the **Connections** page. |
+| "This AI assistant is making requests too quickly" (or "changes too quickly") | Each approval may make 60 calls a minute, and 10 of those may change data. The message says how many seconds to wait. Wait that long and ask again; nothing was done by the refused call. |
+| "Origin not allowed" (error 403) | The request came from a web page on another address. AI assistants must call pmsbridge from their own servers, not from a web page. If a real assistant gets this, check that `PUBLIC_BASE_URL` is exactly the address you use to reach pmsbridge. |
 | "The outcome is unknown" after a change | The request took too long. Check the property management system before asking again; pmsbridge never repeats a change by itself. |
 
 Every tool call is recorded in a tool-call record in the pmsbridge database on your server: who, which

@@ -6,7 +6,9 @@ revoking a grant or disabling a person takes effect on the next request. A missi
 token gets 401 with a `WWW-Authenticate` header that points to the protected resource metadata,
 which is how an AI assistant finds out where to sign in. There are no cookies and no CSRF
 protection because nothing but the Authorization header is accepted; no CORS headers are sent,
-because assistants call the endpoint from their servers, not from a web page.
+because assistants call the endpoint from their servers, not from a web page. A request that
+carries an `Origin` header (only browsers send one) from any other address than this server's own
+is refused with 403 before anything is read.
 
 Tools are registered by discovery: every `pmsbridge.mcp.tools.<domain>` module that exists and
 exports `register(mcp)`. Only a missing tool module is skipped; any other import error is raised.
@@ -18,6 +20,7 @@ import pkgutil
 from collections.abc import AsyncGenerator, Callable, Sequence
 from contextlib import asynccontextmanager
 from typing import cast
+from urllib.parse import urlsplit
 
 from fastapi import FastAPI
 from mcp.server.auth.provider import AccessToken
@@ -34,6 +37,7 @@ from pmsbridge import __version__
 from pmsbridge.core import audit
 from pmsbridge.mcp import tools as tools_package
 from pmsbridge.mcp.context import PrincipalToken
+from pmsbridge.mcp.framework import tool_count
 from pmsbridge.oauth.config import MCP_PATH, SCOPE, issuer, mcp_resource, url_for
 from pmsbridge.oauth.tokens import validate_access_token
 from pmsbridge.pms.base import Provider
@@ -59,6 +63,7 @@ INSTRUCTIONS = (
     "administrator has allowed changes."
 )
 HTTP_UNAUTHORIZED = 401
+HTTP_FORBIDDEN = 403
 HTTP_METHOD_NOT_ALLOWED = 405
 PROTECTED_RESOURCE_METADATA_PATH = "/.well-known/oauth-protected-resource"
 
@@ -81,6 +86,36 @@ class PmsbridgeTokenVerifier:
         )
 
 
+_DEFAULT_PORTS = {"http": 80, "https": 443}
+
+
+def _origin(value: str) -> tuple[str, str, int] | None:
+    """(scheme, host, port) of an origin such as `https://example.com`, or None if it is not one.
+
+    The value `null` (sent by sandboxed pages) and anything with a path, query or credentials
+    is not an origin.
+    """
+    try:
+        parts = urlsplit(value.strip())
+        port = parts.port
+    except ValueError:
+        return None
+    scheme = parts.scheme.lower()
+    if scheme not in _DEFAULT_PORTS or not parts.hostname or parts.username is not None:
+        return None
+    if parts.path not in ("", "/") or parts.query or parts.fragment:
+        return None
+    return scheme, parts.hostname.lower(), port or _DEFAULT_PORTS[scheme]
+
+
+def origin_allowed(value: str | None) -> bool:
+    """True when there is no Origin header, or it is this server's own address."""
+    if value is None:
+        return True
+    own = _origin(issuer())
+    return own is not None and _origin(value) == own
+
+
 def www_authenticate(token_sent: bool) -> str:
     """The challenge for a 401: where to find the metadata, and the error when a token was sent."""
     value = f'Bearer resource_metadata="{url_for(PROTECTED_RESOURCE_METADATA_PATH + MCP_PATH)}"'
@@ -96,6 +131,9 @@ class _McpEndpoint:
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
         if scope["type"] != "http":
             await self.app(scope, receive, send)
+            return
+        if not origin_allowed(Headers(scope=scope).get("origin")):
+            await Response("Origin not allowed.", status_code=HTTP_FORBIDDEN)(scope, receive, send)
             return
         if scope["method"] != "POST":
             # Stateless: the server never starts a message stream or keeps a session, so there is
@@ -211,5 +249,5 @@ def register(app: FastAPI) -> None:
     _run_on_lifespan(app, server)
     logger.info(
         "mcp endpoint ready",
-        extra={"path": MCP_PATH, "tools": len(server._tool_manager.list_tools())},  # pyright: ignore[reportPrivateUsage]
+        extra={"path": MCP_PATH, "tools": tool_count(server)},
     )
