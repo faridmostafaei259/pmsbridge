@@ -72,7 +72,12 @@ async def test_list_sends_the_default_parameters(router: respx.MockRouter) -> No
     )
     page = await api().list_conversations(ConversationQuery(limit=10))
     assert page.items == [] and page.next_cursor is None and page.total is None
-    assert query_of(route) == {"type": "guest", "limit": "10"}
+    assert query_of(route) == {
+        "type": "guest",
+        "limit": "10",
+        "fields": inbox.CONVERSATION_FIELDS,
+    }
+    assert "createdAt" in inbox.CONVERSATION_FIELDS.split()  # else Guesty sends no cursor
     assert route.calls.last.request.headers["authorization"] == "Bearer fake-access-token"
 
 
@@ -448,3 +453,31 @@ def test_capabilities_and_wiring() -> None:
     assert Capability.INBOX_NOTE not in inbox.CAPABILITIES
     assert DOMAIN_MODULES["inbox"] == "inbox"
     assert "inbox" in discover_domains()
+
+
+# ---- channel and last message (requested with `fields`) ----
+
+
+def test_a_conversation_gives_its_channel_and_last_message_time() -> None:
+    found = inbox.map_conversation(
+        {
+            "_id": "6a5000000000000000000c01",
+            "meta": {
+                "integration": {"platform": "airbnb2", "status": "DISCONNECTED"},
+                "guest": {"_id": "6a3000000000000000000001", "fullName": "Fake Guest"},
+                "reservations": [],
+            },
+            "state": {
+                "read": True,
+                "status": "OPEN",
+                "lastMessage": {"body": "Fake text", "date": "2026-11-14T16:20:54.320Z"},
+            },
+            "createdAt": "2026-11-14T16:18:57.605Z",
+        }
+    )
+    assert found is not None
+    assert found.channel == "airbnb2"
+    assert found.last_message_at is not None
+    assert found.last_message_at.isoformat().startswith("2026-11-14T16:20:54")
+    assert found.unread is False
+    assert "Fake text" not in found.model_dump_json()  # the preview text is not passed on

@@ -341,3 +341,56 @@ def test_capabilities_and_wiring() -> None:
     assert {Capability.REVIEWS_READ, Capability.REVIEWS_REPLY} == reviews.CAPABILITIES
     assert DOMAIN_MODULES["reviews"] == "reviews"
     assert "reviews" in discover_domains()
+
+
+# ---- Airbnb reviews (`rawReview`) ----
+
+AIRBNB_ID = "6a7000000000000000000a01"
+
+
+def airbnb_review(**raw: object) -> dict[str, object]:
+    """An Airbnb review as Guesty lists it: the review itself is inside `rawReview`."""
+    return {
+        "_id": AIRBNB_ID,
+        "channelId": "airbnb2",
+        "listingId": "6a1000000000000000000001",
+        "reservationId": "6a2000000000000000000001",
+        "createdAt": "2026-11-07T23:52:48.939Z",
+        "reviewReplies": [],
+        "rawReview": {
+            "reviewer_role": "guest",
+            "overall_rating": 5,
+            "public_review": "A lovely flat, fake review text.",
+            "private_feedback": "Fake private note to the host.",
+            **raw,
+        },
+    }
+
+
+def test_an_airbnb_review_is_read_from_raw_review() -> None:
+    found = reviews.map_review(airbnb_review(reviewee_response="Fake thank-you reply."))
+    assert found is not None
+    assert found.rating == 5.0 and found.rating_scale == 5.0
+    assert found.public_text == "A lovely flat, fake review text."
+    assert found.private_text == "Fake private note to the host."
+    assert found.reply == "Fake thank-you reply."
+    assert found.channel == "airbnb2"
+
+
+def test_an_airbnb_review_without_a_response_has_no_reply() -> None:
+    found = reviews.map_review(airbnb_review())
+    assert found is not None and found.reply is None
+
+
+async def test_an_airbnb_review_answered_on_airbnb_is_refused_and_nothing_is_sent(
+    router: respx.MockRouter,
+) -> None:
+    router.get(REVIEWS_URL).mock(
+        return_value=json_response(
+            {"data": [airbnb_review(reviewee_response="Fake earlier reply.")], "limit": 100}
+        )
+    )
+    put = router.route(method="PUT").mock(return_value=json_response({}))
+    with pytest.raises(PMSValidationError, match="already has a reply"):
+        await api().reply_to_review(reply_of(AIRBNB_ID))
+    assert put.call_count == 0

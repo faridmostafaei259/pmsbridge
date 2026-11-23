@@ -66,6 +66,8 @@ COLUMNS: Final = (
     "mustFinishBefore assignee id"
 )
 MIN_SECONDS_PER_WRITE: Final = 2.0
+# Guesty refuses a task list `limit` below 25 (seen on a live account), so no page asks for fewer.
+MIN_GUESTY_PAGE: Final = 25
 # Guesty states no default or maximum page size. At most this many pages are read for one call.
 MAX_SCAN_PAGES: Final = 10
 
@@ -108,20 +110,28 @@ def _scalars(values: Mapping[str, ExtraValue]) -> dict[str, ExtraValue]:
     return {key: value for key, value in values.items() if value is not None}
 
 
-def _label(value: object) -> str | None:
-    """A text value that a list row may wrap as `{children: text}`."""
+def _label(value: object, key: str = "children") -> str | None:
+    """A text value that a list row may wrap, as `{children: text}` or `{<key>: text}`."""
     wrapped = as_dict(value)
-    return text_of(wrapped.get("children")) if wrapped is not None else text_of(value)
+    if wrapped is None:
+        return text_of(value)
+    return text_of(wrapped.get(key)) or text_of(wrapped.get("children"))
 
 
 def _status_key(value: object) -> str | None:
-    text = _label(value)
+    text = _label(value, "status")
     return " ".join(text.lower().replace("_", " ").split()) if text is not None else None
 
 
 def _type_key(value: object) -> str | None:
-    text = _label(value)
+    text = _label(value, "type")
     return "-".join(text.lower().replace("_", " ").split()) if text is not None else None
+
+
+def _unwrapped(value: object) -> object:
+    """A list row wraps some dates as `{date: value}`."""
+    wrapped = as_dict(value)
+    return wrapped.get("date") if wrapped is not None else value
 
 
 def _status_of(value: object) -> TaskStatus:
@@ -180,7 +190,7 @@ def _due_at(item: Mapping[str, object]) -> datetime | None:
     return _first_datetime(
         timing.get("mustFinishBefore"),
         scheduled.get("mustFinishBefore"),
-        item.get("mustFinishBefore"),
+        _unwrapped(item.get("mustFinishBefore")),
         timing.get("startTime"),
         scheduled.get("startTime"),
     )
@@ -206,6 +216,12 @@ def _reservation_id(item: Mapping[str, object]) -> str | None:
 def _assignee_id(item: Mapping[str, object]) -> str | None:
     assignee = as_dict(item.get("assignee")) or {}
     return text_of(item.get("assigneeId")) or text_of(assignee.get("assigneeId"))
+
+
+def _assignee_name(item: Mapping[str, object]) -> str | None:
+    """The assigned team member's name, which a list row carries as `assigneeFullName`."""
+    assignee = as_dict(item.get("assignee")) or {}
+    return text_of(assignee.get("assigneeFullName"))
 
 
 def _completed_at(item: Mapping[str, object]) -> str | None:
@@ -257,7 +273,7 @@ def map_task(raw: object) -> Task | None:
             reservation_id=_reservation_id(item),
             status=_status_of(item.get("status")),
             due_at=_due_at(item),
-            assignee_name=None,  # Guesty's task payloads carry no name, only the person's id.
+            assignee_name=_assignee_name(item),
             extras=extras,
         )
     except ValidationError:
@@ -383,7 +399,7 @@ class GuestyTasks:
         _check_query(query)
         skip = decode_cursor(query.cursor)
         # With filters applied here, whole pages are read so a page is not mostly rejected rows.
-        size = MAX_PAGE_SIZE if _filtered_here(query) else query.limit
+        size = MAX_PAGE_SIZE if _filtered_here(query) else max(query.limit, MIN_GUESTY_PAGE)
         items: list[Task] = []
         ended = False
         for _ in range(MAX_SCAN_PAGES):

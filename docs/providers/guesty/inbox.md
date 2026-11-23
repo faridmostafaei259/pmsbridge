@@ -37,7 +37,7 @@ the Communication section of the Open API reference.
 
 | Purpose | Method and path | Parameters | Paging |
 |---|---|---|---|
-| List conversations | `GET /v1/communication/conversations` | `type=guest`, `limit` (1 to 100), `filters` (JSON, see below), `cursorAfter` | Cursor: pmsbridge passes Guesty's `cursor.after` on as an opaque cursor. An empty cursor or an empty page ends the list. |
+| List conversations | `GET /v1/communication/conversations` | `type=guest`, `limit` (1 to 100), `fields` (Guesty's defaults plus `integration` and `state`, for the channel and the last message time), `filters` (JSON, see below), `cursorAfter` | Cursor: pmsbridge passes Guesty's `cursor.after` on as an opaque cursor. An empty cursor or an empty page ends the list. |
 | List messages (Guesty calls them posts) | `GET /v1/communication/conversations/{conversationId}/posts` | `sort=-createdAt` (newest first), `cursorAfter` | Cursor, as above. Guesty documents no page size for this call (its default is 25), so the assistant cannot choose one. |
 | Send a message | `POST /v1/communication/conversations/{conversationId}/send-message` | JSON body `{"module": {"type": <channel>}, "body": <text>}` | none |
 

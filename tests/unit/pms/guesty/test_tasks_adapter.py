@@ -72,7 +72,7 @@ async def test_list_sends_columns_limit_and_skip(router: respx.MockRouter) -> No
     page = await api().list_tasks(TaskQuery(limit=10))
     assert page.items == [] and page.next_cursor is None
     params = query_of(route)
-    assert params == {"columns": tasks.COLUMNS, "limit": "10", "skip": "0"}
+    assert params == {"columns": tasks.COLUMNS, "limit": "25", "skip": "0"}  # Guesty minimum
     assert "id" in tasks.COLUMNS.split()
 
 
@@ -408,3 +408,43 @@ def test_capabilities_and_wiring() -> None:
     assert {Capability.TASKS_READ, Capability.TASKS_CREATE} == tasks.CAPABILITIES
     assert DOMAIN_MODULES["tasks"] == "tasks"
     assert "tasks" in discover_domains()
+
+
+# ---- list rows as Guesty sends them (each column wrapped) ----
+
+
+def live_shaped_row() -> dict[str, object]:
+    return {
+        "status": {"status": "completed"},
+        "taskTitle": {"children": "Fake leak repair"},
+        "type": {"type": "maintenance"},
+        "listing": {"listingId": "6a1000000000000000000001", "title": "Fake flat"},
+        "reservation": {"reservationId": "6a2000000000000000000001", "status": "confirmed"},
+        "scheduledFor": {"startTime": "2026-10-07T12:50:43.137Z", "mustFinishBefore": None},
+        "endTime": {},
+        "canStartAfter": {"date": None},
+        "mustFinishBefore": {"date": "2026-10-08T10:00:00.000Z"},
+        "assignee": {"assigneeId": "6a9000000000000000000001", "assigneeFullName": "Fake Person"},
+        "id": "6a8000000000000000000t01",
+    }
+
+
+def test_a_wrapped_list_row_maps_status_type_due_date_and_assignee() -> None:
+    found = tasks.map_task(live_shaped_row())
+    assert found is not None
+    assert found.status is TaskStatus.DONE and found.task_type is TaskType.MAINTENANCE
+    assert found.title == "Fake leak repair"
+    assert found.listing_id == "6a1000000000000000000001"
+    assert found.reservation_id == "6a2000000000000000000001"
+    assert found.due_at is not None and found.due_at.isoformat().startswith("2026-10-08T10:00")
+    assert found.assignee_name == "Fake Person"
+
+
+async def test_a_small_limit_asks_guesty_for_at_least_25_and_returns_only_the_limit(
+    router: respx.MockRouter,
+) -> None:
+    rows = [{**live_shaped_row(), "id": f"6a80000000000000000t{n:04d}"} for n in range(25)]
+    route = router.get(TASKS_URL).mock(return_value=json_response(rows))
+    page = await api().list_tasks(TaskQuery(limit=3))
+    assert dict(route.calls.last.request.url.params)["limit"] == "25"
+    assert len(page.items) == 3 and page.next_cursor is not None

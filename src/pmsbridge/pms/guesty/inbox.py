@@ -59,6 +59,11 @@ logger = logging.getLogger(__name__)
 CAPABILITIES: Final = frozenset({Capability.INBOX_READ, Capability.INBOX_SEND})
 
 CONVERSATIONS_PATH: Final = "/communication/conversations"
+# Guesty's default fields leave out the channel (`integration`) and the last message (`state`).
+# `createdAt` must stay in the list, or Guesty returns no paging cursor.
+CONVERSATION_FIELDS: Final = (
+    "guest reservation status assignee priority createdAt integration state"
+)
 MIN_SECONDS_PER_WRITE: Final = 2.0
 
 # `module.type` values that reach the guest. `note` and `log` never do. `airbnb2` has no canonical
@@ -98,6 +103,8 @@ def map_conversation(raw: object) -> Conversation | None:
     state = as_dict(item.get("state")) or {}
     meta = as_dict(item.get("meta")) or {}
     guest = as_dict(meta.get("guest")) or {}
+    integration = as_dict(meta.get("integration")) or as_dict(item.get("integration")) or {}
+    channel = text_of(integration.get("platform"))
     reservations = [d for entry in as_list(meta.get("reservations")) or [] if (d := as_dict(entry))]
     first = reservations[0] if reservations else {}
     listing = as_dict(first.get("listing")) or {}
@@ -126,6 +133,7 @@ def map_conversation(raw: object) -> Conversation | None:
             listing_id=text_of(listing.get("_id")),
             guest_id=text_of(guest.get("_id")),
             guest_name=text_of(guest.get("fullName")),
+            channel=channel.lower() if channel is not None else None,
             last_message_at=_latest(last.get("date"))
             or _latest(last_from.get("user"), last_from.get("nonUser")),
             unread=None if read is None else not read,
@@ -241,7 +249,11 @@ class GuestyInbox:
             filters.append(_filter("listing._id", _plain_id(query.listing_id)))
         if query.unread_only:
             filters.append(_filter("read", False))
-        params: dict[str, str | int] = {"type": "guest", "limit": query.limit}
+        params: dict[str, str | int] = {
+            "type": "guest",
+            "limit": query.limit,
+            "fields": CONVERSATION_FIELDS,
+        }
         if filters:
             params["filters"] = json.dumps(filters, separators=(",", ":"))
         after = decode_token_cursor(query.cursor)

@@ -58,6 +58,8 @@ MIN_SECONDS_PER_WRITE: Final = 2.0
 MAX_SCAN_PAGES: Final = 10
 # Documented for the one review shape whose rating is described: 1 to 10.
 RATING_SCALE: Final = 10.0
+# Airbnb reviews (`channelId` airbnb2) keep the review in `rawReview`, rated 1 to 5 (seen live).
+AIRBNB_RATING_SCALE: Final = 5.0
 # A reply in one of these states was not made, so a new one may be tried.
 _NO_REPLY_STATES: Final = frozenset({"FAILED", "NOT_FOUND"})
 
@@ -100,12 +102,20 @@ def map_review(raw: object) -> Review | None:
         logger.warning("review skipped: no usable id")
         return None
     contents = as_dict(item.get("contents")) or {}
-    rating = number_of(contents.get("rating"))
+    airbnb = as_dict(item.get("rawReview")) or {}
+    rating, scale = number_of(contents.get("rating")), RATING_SCALE
+    if rating is None and (overall := number_of(airbnb.get("overall_rating"))) is not None:
+        rating, scale = overall, AIRBNB_RATING_SCALE
     if rating is not None and rating < 0:
         rating = None
     body = contents.get("body")
+    if not isinstance(body, str):
+        body = airbnb.get("public_review")
+    private = airbnb.get("private_feedback")
     replies = _active_replies(item)
     reply_texts = [text for entry in replies if (text := text_of(entry.get("reviewReply")))]
+    if not reply_texts and (answered := text_of(airbnb.get("reviewee_response"))) is not None:
+        reply_texts = [answered]
     first = replies[0] if replies else {}
     extras = _scalars(
         {
@@ -122,10 +132,10 @@ def map_review(raw: object) -> Review | None:
             reservation_id=text_of(item.get("reservationId")),
             channel=text_of(item.get("channelId")),
             rating=None if rating is None else float(rating),
-            # Guesty states a scale only for this one shape of review.
-            rating_scale=None if rating is None else RATING_SCALE,
+            rating_scale=None if rating is None else scale,
             public_text=text_of(body) if isinstance(body, str) else None,
-            private_text=None,  # Guesty's reference has no private feedback field.
+            # Airbnb's private feedback is written to the host only, never shown in public.
+            private_text=text_of(private) if isinstance(private, str) else None,
             reply=reply_texts[0] if reply_texts else None,
             created_at=(
                 datetime_of(item.get("createdAt"), naive_as_utc=True)
@@ -188,7 +198,9 @@ class GuestyReviews:
     async def reply_to_review(self, reply: ReviewReply) -> Review:
         wanted = reply.review_id.strip()
         quote_id(wanted)
-        if _active_replies(await self._find(wanted)):
+        found = await self._find(wanted)
+        airbnb = as_dict(found.get("rawReview")) or {}
+        if _active_replies(found) or text_of(airbnb.get("reviewee_response")) is not None:
             raise PMSValidationError(
                 "This review already has a reply, so nothing was sent. Edit or remove the reply "
                 "in Guesty or on the booking channel."

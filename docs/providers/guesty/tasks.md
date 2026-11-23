@@ -28,7 +28,7 @@ reference.
 
 | Purpose | Method and path | Parameters | Paging |
 |---|---|---|---|
-| List tasks | `GET /v1/tasks-open-api/tasks` | `columns` (required), `filters`, `limit`, `skip` | `skip` and `limit`: pmsbridge turns the number of rows already read into an opaque cursor. Only an empty page ends the list. |
+| List tasks | `GET /v1/tasks-open-api/tasks` | `columns` (required), `filters`, `limit` (at least 25), `skip` | `skip` and `limit`: pmsbridge turns the number of rows already read into an opaque cursor. Only an empty page ends the list. |
 | Create a task | `POST /v1/tasks-open-api/create-single-task` | JSON body, see below | none |
 
 Every call uses Guesty's shared rate limits and stops after 20 seconds. Reads are repeated safely when Guesty
@@ -82,10 +82,13 @@ with the original word kept as an extra value. Guesty has no check-out kind.
 `list_tasks` normally have an empty checklist. The checklist of a task you just created is returned by
 `create_task`, as Guesty answers it.
 
-**Assignee.** Guesty's task answers contain only the id of the person a task is assigned to, never a name, so
-the assignee name is always empty and the id is shown as an extra value. Phone numbers, email addresses and
-pictures of staff are never read. Looking up names would need Guesty's users endpoints, which pmsbridge does
-not use for tasks.
+**Assignee.** A task list row carries the assigned team member's id and full name (`assignee.assigneeFullName`):
+the name is shown as the assignee and the id as an extra value. A task object returned by `create_task` has
+only the id. Phone numbers, email addresses and pictures of staff are never read.
+
+**List rows.** Guesty wraps each column of a list row in its own object: `{"status": ...}`, `{"type": ...}`,
+`{"children": <title>}`, `{"date": <time>}`. Guesty refuses a `limit` below 25, so pmsbridge always asks for at
+least 25 rows and returns only as many as the assistant asked for.
 
 ## Creating a task
 
@@ -123,7 +126,7 @@ that is too much for some assistants, do not approve them for that connection, o
 
 ## Known gaps
 
-- **Assignee names**: not available, only the id.
+- **Assignee names**: on the list only, not on a newly created task.
 - **Checklist on the list**: not offered by Guesty's list columns.
 - **Filters by listing, kind and due date**: done by pmsbridge within 1,000 rows, because Guesty documents no
   such filter.

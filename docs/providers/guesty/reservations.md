@@ -43,7 +43,7 @@ the reservations, guests and reservation reports sections of the Open API refere
 | Purpose | Method and path | Parameters | Paging |
 |---|---|---|---|
 | List reservations | `GET /v1/reservations-v3/search` | `filter[listingId]`, `filter[status]` (a comma list), `filter[confirmationCode]`, `filter[checkIn][gte]` and `[lte]`, `filter[checkOut][gte]` and `[lte]` (dates as `YYYY-MM-DD`, compared with the listing's local date), `filter[createdAt][gte]` and `[lt]` (ISO 8601 times), `sort=checkIn`, `limit` (1 to 100), `skip` | `skip` and `limit`; Guesty says whether there is more (`pagination.hasMore`) and gives no total. pmsbridge turns the next `skip` into an opaque cursor. |
-| Get one reservation | `GET /v1/reservations-v3` | `reservationIds` with exactly one id | none. Guesty has no "get by id" path, so this call takes a list of up to ten ids and pmsbridge sends one. |
+| Get one reservation | `GET /v1/reservations-v3` | `reservationIds[]` with exactly one id (Guesty refuses the plain `reservationIds=` form) | none. Guesty has no "get by id" path, so this call takes a list of up to ten ids and pmsbridge sends one. |
 | Guest contact (best effort) | `GET /v1/guests-crud/{guestId}` | `fields=fullName email phone` | none |
 | Balance (best effort) | `GET /v1/reservations-reports/reservations/search` | `filter[confirmationCode]`, `limit=10` | none needed |
 | Add a note | `POST /v1/reservations-v3/{reservationId}/comments` | JSON body `{"body": <text>}` only (1 to 4,095 characters); no mentions and no parent comment are sent | none |
@@ -155,9 +155,10 @@ notes: pmsbridge drops Guesty's key-code field, but a code typed into a normal n
 - **Search by guest name**: Guesty's reservation search cannot find a guest by name, email or phone, so
   the search text only matches a confirmation code, exactly. To find a guest's bookings, list by date and
   look at the guest on each one with `get_reservation`.
-- **Total price**: Guesty has no single total-price field on these calls (the report shows a subtotal
-  and taxes separately and the reference is unclear how they combine), so the total price is left empty.
-  The balance due is shown instead.
+- **Total price**: shown only when Guesty gives the guest's total (`money.totalPrice`), which channel
+  bookings such as Airbnb usually do not. `get_reservation` also shows the host payout
+  (`money.hostPayout`), the amount paid (`money.totalPaid`) and the currency as extra values, and the
+  balance due. Payments and payment methods are never shown.
 - **Several units in one booking**: for a booking that spans several listings or units, pmsbridge shows
   the first one (`stay[0]`), the first check-in to the last check-out, and the largest party. Filtering
   by property matches the first stay only.

@@ -196,7 +196,7 @@ async def test_get_combines_the_reservation_the_guest_and_the_balance(
 ) -> None:
     routes = mock_detail(router)
     reservation = await reservations.build(make_client()).get_reservation(f" {RESERVATION_ID} ")
-    assert query_of(routes["by_ids"]) == {"reservationIds": RESERVATION_ID}
+    assert query_of(routes["by_ids"]) == {"reservationIds[]": RESERVATION_ID}
     assert query_of(routes["guest"]) == {"fields": "fullName email phone"}
     assert query_of(routes["report"]) == {"filter[confirmationCode]": "TST-1001", "limit": "10"}
     assert reservation.id == RESERVATION_ID and reservation.listing_id == "6a1f00000000000000000001"
@@ -444,7 +444,7 @@ async def test_a_note_is_one_post_of_the_text_alone_then_a_read(router: respx.Mo
     request = comment.calls.last.request
     assert json.loads(request.content) == {"body": NOTE_TEXT}  # no mentions, parent or notes keys
     assert request.headers["authorization"] == "Bearer fake-access-token"
-    assert dict(by_ids.calls.last.request.url.params) == {"reservationIds": RESERVATION_ID}
+    assert dict(by_ids.calls.last.request.url.params) == {"reservationIds[]": RESERVATION_ID}
     assert reservation.id == RESERVATION_ID and reservation.confirmation_code == "TST-1001"
     assert DOOR_CODE not in reservation.model_dump_json()
 
@@ -652,3 +652,88 @@ def test_capabilities_and_wiring() -> None:
     assert DOMAIN_MODULES["reservations"] == "reservations"
     assert discover_domains()["reservations"] is reservations
     assert isinstance(reservations.build(make_client()), reservations.GuestyReservations)
+
+
+# ---- money in a by-ids result ----
+
+
+def by_ids_item(money: dict[str, object]) -> dict[str, object]:
+    """A by-ids result as Guesty sends it (`_id`, `stay[].unitId`, `bookerId`), with `money`."""
+    return {
+        "_id": RESERVATION_ID,
+        "status": "confirmed",
+        "platform": "airbnb2",
+        "bookerId": GUEST_ID,
+        "confirmationCode": "HMFAKE0001",
+        "createdAt": "2026-10-05T02:30:42.300Z",
+        "notes": {},
+        "stay": [
+            {
+                "unitId": "6a1000000000000000000001",
+                "checkInDateLocalized": "2026-10-05",
+                "checkOutDateLocalized": "2026-10-07",
+                "guestsCount": 2,
+            }
+        ],
+        "money": money,
+    }
+
+
+def test_a_by_ids_result_gives_host_payout_and_amount_paid_but_no_payments() -> None:
+    found = reservations.map_reservation(
+        by_ids_item(
+            {
+                "currency": "aed",
+                "hostPayout": 963.3,
+                "totalPaid": 963.3,
+                "payments": [{"amount": 963.3, "paymentMethodId": "fake-method-id"}],
+            }
+        )
+    )
+    assert found is not None
+    assert found.listing_id == "6a1000000000000000000001" and found.guest_id == GUEST_ID
+    assert found.nights == 2 and found.channel == "airbnb2"
+    assert found.extras["host_payout"] == 963.3 and found.extras["total_paid"] == 963.3
+    assert found.extras["currency"] == "AED"
+    assert found.total_price is None  # a channel booking without the guest's total
+    assert "fake-method-id" not in found.model_dump_json()
+
+
+def test_a_by_ids_result_with_the_guests_total_sets_the_total_price() -> None:
+    found = reservations.map_reservation(
+        by_ids_item({"currency": "USD", "totalPrice": 1250.5, "hostPayout": 1100})
+    )
+    assert found is not None and found.total_price is not None
+    assert str(found.total_price.amount) == "1250.5" and found.total_price.currency == "USD"
+
+
+# ---- get by confirmation code ----
+
+
+def code_search_answer(*ids: str) -> dict[str, object]:
+    return {
+        "results": [{"reservationId": found, "confirmationCode": "HMFAKE0001"} for found in ids],
+        "pagination": {"skip": 0, "limit": 2, "hasMore": False},
+    }
+
+
+async def test_get_by_confirmation_code_finds_the_id_first(router: respx.MockRouter) -> None:
+    search = router.get(SEARCH_URL).mock(
+        return_value=httpx.Response(200, json=code_search_answer(RESERVATION_ID))
+    )
+    by_ids = router.get(BY_IDS_URL).mock(return_value=httpx.Response(200, json=[]))
+    with pytest.raises(PMSNotFoundError):  # the by-ids answer is empty in this test
+        await reservations.build(make_client()).get_reservation("HMFAKE0001")
+    assert query_of(search) == {"filter[confirmationCode]": "HMFAKE0001", "limit": "2"}
+    assert query_of(by_ids) == {"reservationIds[]": RESERVATION_ID}
+
+
+@pytest.mark.parametrize("ids", [(), ("6a2000000000000000000001", "6a2000000000000000000002")])
+async def test_a_code_matching_no_or_several_reservations_is_not_found(
+    router: respx.MockRouter, ids: tuple[str, ...]
+) -> None:
+    router.get(SEARCH_URL).mock(return_value=httpx.Response(200, json=code_search_answer(*ids)))
+    by_ids = router.get(BY_IDS_URL).mock(return_value=httpx.Response(200, json=[]))
+    with pytest.raises(PMSNotFoundError):
+        await reservations.build(make_client()).get_reservation("HMFAKE0001")
+    assert by_ids.call_count == 0

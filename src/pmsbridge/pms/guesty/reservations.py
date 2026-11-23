@@ -1,7 +1,7 @@
 """Guesty reservations: list, get and add an internal note, mapped to the canonical `Reservation`.
 
 Endpoints (see docs/providers/guesty/reservations.md): `GET /reservations-v3/search` for lists,
-`GET /reservations-v3?reservationIds=` for one reservation (Guesty has no get-by-id path), then,
+`GET /reservations-v3?reservationIds[]=` for one reservation (Guesty has no get-by-id path), then,
 best effort, `GET /guests-crud/{guestId}` for the guest's contact details and
 `GET /reservations-reports/reservations/search` for the balance still owed.
 
@@ -18,6 +18,7 @@ logged. Shared helpers are in `common.py`.
 """
 
 import logging
+import re
 from datetime import date, timedelta
 from typing import Final
 
@@ -43,6 +44,7 @@ from pmsbridge.pms.guesty.common import (
     encode_cursor,
     flag_of,
     money_of,
+    number_of,
     quote_id,
     text_of,
 )
@@ -89,6 +91,8 @@ STATUS_TO_GUESTY: Final[dict[ReservationStatus, tuple[str, ...]]] = {
 }
 
 SEARCH_PATH: Final = "/reservations-v3/search"
+# A Guesty id: 24 hexadecimal characters. Anything else is looked up as a confirmation code.
+_GUESTY_ID: Final = re.compile(r"[0-9a-fA-F]{24}")
 BY_IDS_PATH: Final = "/reservations-v3"
 REPORTS_PATH: Final = "/reservations-reports/reservations/search"
 GUEST_FIELDS: Final = "fullName email phone"
@@ -173,19 +177,30 @@ def notes_text(raw: object) -> str | None:
 
 def _extras(item: dict[str, object], status: str | None) -> dict[str, ExtraValue]:
     stay_status = as_dict(item.get("guestStay")) or {}
+    # A by-ids result carries `money`. Only these totals are read: never payments or methods.
+    money = as_dict(item.get("money")) or {}
     candidates: dict[str, ExtraValue] = {
         "pms_status": status,
         "source": text_of(item.get("source")),
         "guest_stay_status": text_of(stay_status.get("status")),
+        "currency": (text_of(money.get("currency")) or "").upper() or None,
+        "host_payout": number_of(money.get("hostPayout")),
+        "total_paid": number_of(money.get("totalPaid")),
     }
     return {key: value for key, value in candidates.items() if value is not None}
+
+
+def _total_price(item: dict[str, object]) -> Money | None:
+    money = as_dict(item.get("money")) or {}
+    return money_of(money.get("totalPrice"), money.get("currency"))
 
 
 def map_reservation(raw: object) -> Reservation | None:
     """The canonical reservation, or None (logged by id only) for an item that cannot be mapped.
 
     Both result shapes are accepted: a search result (`reservationId`, `guestId`, `channel`) and a
-    by-ids result (`_id`, `bookerId`, `platform`). Guest contact and money are not in either.
+    by-ids result (`_id`, `bookerId`, `platform`, and `money`). Guest contact is in neither. The
+    total price is the guest's total (`money.totalPrice`), which channel bookings may not have.
     """
     item = as_dict(raw)
     reservation_id = _id_of(item)
@@ -215,7 +230,7 @@ def map_reservation(raw: object) -> Reservation | None:
             check_out=check_out,
             nights=(check_out - check_in).days,
             guests_count=_guests_count(item, stays),
-            total_price=None,
+            total_price=_total_price(item),
             balance_due=None,
             created_at=datetime_of(item.get("createdAt"), naive_as_utc=True),  # documented as UTC
             notes=notes_text(item.get("notes")),
@@ -312,6 +327,9 @@ class GuestyReservations:
 
     async def get_reservation(self, reservation_id: str) -> Reservation:
         wanted = _checked_id(reservation_id)
+        if not _GUESTY_ID.fullmatch(wanted):
+            # Not a Guesty id: people and assistants often have only the confirmation code.
+            wanted = await self._id_for_code(wanted)
         reservation = await self._fetch(wanted)
         guest = await self._guest(wanted, reservation.guest_id)
         balance = await self._balance(wanted, reservation.confirmation_code)
@@ -342,9 +360,25 @@ class GuestyReservations:
                 "back afterwards. Do not add the note again."
             ) from None
 
+    async def _id_for_code(self, confirmation_code: str) -> str:
+        """The id of the one reservation with this confirmation code, found by an exact search."""
+        response = await self._client.request(
+            "GET",
+            SEARCH_PATH,
+            params={"filter[confirmationCode]": confirmation_code, "limit": 2},
+        )
+        raw, _ = _results(response.json())
+        found = {found_id for entry in raw if (found_id := _id_of(as_dict(entry))) is not None}
+        if len(found) != 1:
+            raise PMSNotFoundError("Reservation not found.")
+        return found.pop()
+
     async def _fetch(self, wanted: str) -> Reservation:
         """One reservation by id, from the by-ids read (no guest contact, no balance)."""
-        response = await self._client.request("GET", BY_IDS_PATH, params={"reservationIds": wanted})
+        # Guesty refuses a plain `reservationIds=` ("must be an array"): the brackets are needed.
+        response = await self._client.request(
+            "GET", BY_IDS_PATH, params={"reservationIds[]": wanted}
+        )
         found, _ = _results(response.json())  # a bare array, or an object with `results`
         raw = next((e for e in found if _id_of(as_dict(e)) == wanted), None)
         if raw is None:

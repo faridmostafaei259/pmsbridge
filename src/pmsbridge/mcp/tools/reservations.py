@@ -144,10 +144,15 @@ def register(mcp: MCPServer) -> None:
         call: ToolCall[ReservationsAPI],
         *,
         reservation_id: Annotated[
-            str, Field(description="The reservation id from list_reservations.")
+            str,
+            Field(
+                description=(
+                    "The reservation id from list_reservations, or the booking's confirmation code."
+                )
+            ),
         ],
     ) -> Reservation:
-        """Get one reservation by its id, with the guest's contact details and balance.
+        """Get one reservation by id or confirmation code, with contact details and balance.
 
         Returns the dates, status, channel, confirmation code, notes, and, when the property
         management system provides them, the guest's name, email and phone and the balance the

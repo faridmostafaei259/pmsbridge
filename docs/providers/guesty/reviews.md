@@ -59,14 +59,16 @@ and reads only the values below. Anything else is ignored.
 | listing, reservation | `listingId`, `reservationId` | |
 | channel | `channelId` | For example `airbnb2`, `bookingCom`, `homeaway2`, `custom`. |
 | created | `createdAt`, else `createdAtGuesty` | |
-| public text | `contents.body` | Shortened with a marker after 5,000 characters. |
-| rating, scale | `contents.rating`, scale 10 | Guesty documents 1 to 10 for this field only. |
-| reply | `reviewReplies[].reviewReply` | See below. |
+| public text | `contents.body`, else `rawReview.public_review` (Airbnb) | Shortened with a marker after 5,000 characters. |
+| rating, scale | `contents.rating`, scale 10; else `rawReview.overall_rating`, scale 5 (Airbnb) | Guesty documents 1 to 10 for `contents.rating`. Airbnb rates 1 to 5. |
+| private feedback | `rawReview.private_feedback` (Airbnb) | What the guest wrote to the host only. Never public. |
+| reply | `reviewReplies[].reviewReply`, else `rawReview.reviewee_response` (Airbnb) | See below. |
 | extra values | `reviewReplies[].status`, `reviewReplies[].replyAt`, `externalReviewId`, `updatedAtGuesty` (else `updatedAt`) | Shown for display only. |
 
-The name of the guest who wrote the review (`contents.reviewerName`) and the channel's own copy of the review
-(`rawReview`) are never read or shown. Private feedback from the guest to the host has no field in Guesty's
-reference, so it is always empty.
+The name of the guest who wrote the review (`contents.reviewerName`) is never read or shown. Airbnb reviews
+keep the review in the channel's own copy (`rawReview`); only the rating, public text, private feedback and
+host response listed above are read from it. A review answered directly on Airbnb (`reviewee_response`) counts
+as already answered, so `reply_to_review` refuses it and sends nothing.
 
 ### What this means for Airbnb, Booking.com and Vrbo reviews
 
@@ -107,7 +109,7 @@ approve them for that connection, or leave changes off.
 ## Known gaps
 
 - **Text and rating of channel reviews**: possibly missing, see above.
-- **Private feedback**: not available.
+- **Private feedback**: Airbnb reviews only.
 - **Search by rating, guest or reservation**: not offered.
 - **Editing a reply**: not offered.
 - **Unverified shapes**: the layout of the list answer and of the reply answer is not given in Guesty's
