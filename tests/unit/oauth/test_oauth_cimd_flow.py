@@ -119,7 +119,8 @@ def test_only_the_required_fields_are_needed() -> None:
         (document(redirect_uris=["https://assistant.example.test/cb#frag"]), "fragment"),
         (document(redirect_uris=["javascript:alert(1)"]), "https"),
         (document(redirect_uris=["https://a.test/cb"] * 11 + ["https://b.test/cb"]), "At most"),
-        (document(grant_types=["password"]), "grant_types"),
+        (document(grant_types=["password"]), "authorization_code"),
+        (document(grant_types=["authorization_code", None]), "list of strings"),
         (document(grant_types=["refresh_token"]), "authorization_code"),
         (document(response_types=["token"]), "response_types"),
         (["not", "an", "object"], "JSON object"),
@@ -133,6 +134,13 @@ def test_a_bad_document_is_refused_with_a_fixed_message(body: object, message: s
     with pytest.raises(MetadataFetchError, match=message) as caught:
         parse(body)
     assert "fake-secret" not in str(caught.value)
+
+
+def test_extra_grant_types_in_a_document_are_ignored_not_refused() -> None:
+    data = parse(
+        document(grant_types=["authorization_code", "refresh_token", "client_credentials"])
+    )
+    assert data.grant_types == ["authorization_code", "refresh_token"]  # type: ignore[attr-defined]
 
 
 def test_loopback_redirects_are_allowed_as_for_registered_clients() -> None:

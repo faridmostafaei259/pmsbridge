@@ -152,8 +152,9 @@ async def test_the_longest_allowed_name_is_kept_and_trimmed(anonymous: httpx.Asy
         {"grant_types": ["implicit"]},
         {"grant_types": ["refresh_token"]},
         {"grant_types": []},
+        {"grant_types": ["authorization_code", 5]},
+        {"grant_types": ["authorization_code"] * 21},
         {"response_types": ["token"]},
-        {"response_types": ["code", "token"]},
     ],
 )
 async def test_unsupported_metadata_is_refused(
@@ -162,6 +163,28 @@ async def test_unsupported_metadata_is_refused(
     response = await post(anonymous, {**VALID, **extra})
     assert response.status_code == 400
     assert response.json()["error"] == "invalid_client_metadata"
+
+
+async def test_grant_and_response_types_this_server_does_not_offer_are_ignored(
+    anonymous: httpx.AsyncClient,
+) -> None:
+    response = await post(
+        anonymous,
+        {
+            **VALID,
+            "grant_types": [
+                "authorization_code",
+                "client_credentials",
+                "urn:ietf:params:oauth:grant-type:jwt-bearer",
+                "refresh_token",
+            ],
+            "response_types": ["code", "token"],
+        },
+    )
+    assert response.status_code == 201
+    body = response.json()
+    assert body["grant_types"] == ["authorization_code", "refresh_token"]
+    assert body["response_types"] == ["code"]
 
 
 async def test_unused_metadata_fields_are_ignored(anonymous: httpx.AsyncClient) -> None:

@@ -29,6 +29,7 @@ from pmsbridge.oauth.redirects import InvalidRedirectError, validate_redirect_ur
 MAX_BODY_BYTES: Final = 16 * 1024
 MAX_REDIRECT_URIS: Final = 10
 MAX_NAME_LENGTH: Final = 100
+MAX_LISTED_VALUES: Final = 20
 PER_ADDRESS_PER_HOUR: Final = 10
 GLOBAL_PER_HOUR: Final = 30
 WINDOW_SECONDS: Final = 3600
@@ -131,13 +132,14 @@ def _redirect_uris(value: object) -> list[str]:
     return uris
 
 
-def _choice(value: object, allowed: tuple[str, ...], field: str) -> list[str]:
+def _supported(value: object, allowed: tuple[str, ...], field: str) -> list[str]:
+    """The supported values in a list of strings, in order. Values this server does not offer are
+    ignored rather than refused (RFC 7591 section 2), because assistants often list more than they
+    need; they are never stored, so they can never be used."""
     items: list[object] = list(value) if isinstance(value, list) else [value]  # pyright: ignore[reportUnknownArgumentType]
-    if not items or any(not isinstance(item, str) or item not in allowed for item in items):
-        raise RegistrationError(
-            "invalid_client_metadata", f"{field} may only contain: {', '.join(allowed)}."
-        )
-    return list(dict.fromkeys(str(item) for item in items))
+    if len(items) > MAX_LISTED_VALUES or any(not isinstance(item, str) for item in items):
+        raise RegistrationError("invalid_client_metadata", f"{field} must be a list of strings.")
+    return list(dict.fromkeys(str(item) for item in items if item in allowed))
 
 
 def parse_registration(payload: object) -> clients.RegistrationData:
@@ -153,13 +155,13 @@ def parse_registration(payload: object) -> clients.RegistrationData:
             "invalid_client_metadata",
             f"token_endpoint_auth_method must be one of: {', '.join(AUTH_METHODS)}.",
         )
-    grants = _choice(data.get("grant_types", ["authorization_code"]), GRANT_TYPES, "grant_types")
+    grants = _supported(data.get("grant_types", ["authorization_code"]), GRANT_TYPES, "grant_types")
     if "authorization_code" not in grants:
         raise RegistrationError(
             "invalid_client_metadata", "grant_types must include authorization_code."
         )
-    if _choice(data.get("response_types", ["code"]), ("code",), "response_types") != ["code"]:
-        raise RegistrationError("invalid_client_metadata", "response_types must be code.")
+    if _supported(data.get("response_types", ["code"]), ("code",), "response_types") != ["code"]:
+        raise RegistrationError("invalid_client_metadata", "response_types must include code.")
     return clients.RegistrationData(name, uris, method, grants)
 
 
