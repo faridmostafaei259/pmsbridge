@@ -31,6 +31,8 @@ address.
 | `DATABASE_PATH` | path | `<DATA_DIR>/pmsbridge.db` | no | The SQLite database file. |
 | `BACKUP_DIR` | path | `<DATA_DIR>/backups` | no | The folder for automatic backups taken before a database upgrade. |
 | `PRE_MIGRATION_BACKUPS_KEEP` | whole number | `5` | no | How many automatic pre-upgrade backups to keep. Older ones are deleted. |
+| `GUESTY_TOKEN_REFRESH_MINUTES` | whole number | `45` | no | Refresh a Guesty access token this many minutes before it expires. Guesty allows only five new tokens per day for each API key, so tokens are reused until then. |
+| `PMS_MAX_CONCURRENCY` | whole number | `8` | no | How many requests may run at the same time against one PMS account. |
 | `SESSION_IDLE_HOURS` | whole number | `12` | no | Sign staff out after this many hours without activity in the dashboard. |
 | `SESSION_MAX_DAYS` | whole number | `7` | no | Sign staff out this many days after they signed in, even if they stay active. |
 | `LOG_LEVEL` | one of `DEBUG`, `INFO`, `WARNING`, `ERROR`, `CRITICAL` | `INFO` | no | How much detail goes to the logs. Logs never contain passwords, tokens or guest details. |

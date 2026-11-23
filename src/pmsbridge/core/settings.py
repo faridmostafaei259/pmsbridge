@@ -148,6 +148,21 @@ class Settings(BaseSettings):
         le=100,
         description="How many automatic pre-upgrade backups to keep. Older ones are deleted.",
     )
+    guesty_token_refresh_minutes: int = Field(
+        default=45,
+        ge=30,
+        le=60,
+        description=(
+            "Refresh a Guesty access token this many minutes before it expires. Guesty allows "
+            "only five new tokens per day for each API key, so tokens are reused until then."
+        ),
+    )
+    pms_max_concurrency: int = Field(
+        default=8,
+        ge=1,
+        le=15,
+        description="How many requests may run at the same time against one PMS account.",
+    )
     session_idle_hours: int = Field(
         default=12,
         ge=1,
