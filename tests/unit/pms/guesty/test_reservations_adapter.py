@@ -194,7 +194,9 @@ async def test_a_bad_cursor_is_refused_before_any_request(router: respx.MockRout
 async def test_get_combines_the_reservation_the_guest_and_the_balance(
     router: respx.MockRouter,
 ) -> None:
-    routes = mock_detail(router)
+    # A booking the company takes payment for itself, so the balance is what the guest owes.
+    direct = [{**item, "platform": "manual"} for item in fixture("by_ids.json")]
+    routes = mock_detail(router, by_ids=direct)
     reservation = await reservations.build(make_client()).get_reservation(f" {RESERVATION_ID} ")
     assert query_of(routes["by_ids"]) == {"reservationIds[]": RESERVATION_ID}
     assert query_of(routes["guest"]) == {"fields": "fullName email phone"}
@@ -226,7 +228,8 @@ async def test_get_never_asks_for_payment_or_door_data(router: respx.MockRouter)
 async def test_get_with_a_missing_guest_still_returns(router: respx.MockRouter) -> None:
     mock_detail(router, guest=json_response({"message": "private text"}, 404))
     reservation = await reservations.build(make_client()).get_reservation(RESERVATION_ID)
-    assert reservation.guest is None and reservation.balance_due is not None
+    assert reservation.guest is None
+    assert reservation.extras["payout_pending_from_channel"] == 125.5  # an Airbnb booking
 
 
 async def test_get_with_a_failing_report_still_returns(router: respx.MockRouter) -> None:
@@ -737,3 +740,14 @@ async def test_a_code_matching_no_or_several_reservations_is_not_found(
     with pytest.raises(PMSNotFoundError):
         await reservations.build(make_client()).get_reservation("HMFAKE0001")
     assert by_ids.call_count == 0
+
+
+async def test_an_airbnb_balance_is_a_pending_payout_not_a_balance_due(
+    router: respx.MockRouter,
+) -> None:
+    # Airbnb takes the guest's payment, so Guesty's balance is what Airbnb still owes the host.
+    mock_detail(router)  # the fixture is an Airbnb booking (`platform` airbnb2)
+    reservation = await reservations.build(make_client()).get_reservation(RESERVATION_ID)
+    assert reservation.channel == "airbnb2"
+    assert reservation.balance_due is None
+    assert reservation.extras["payout_pending_from_channel"] == 125.5

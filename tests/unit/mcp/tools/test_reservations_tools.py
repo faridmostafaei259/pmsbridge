@@ -293,7 +293,9 @@ async def test_guesty_get_end_to_end(world: World, guesty: respx.MockRouter) -> 
     assert result["isError"] is False
     found = result["structuredContent"]
     assert found["guest"]["name"] == GUEST_NAME and found["guest"]["email"] == GUEST_EMAIL
-    assert found["balance_due"]["currency"] == "EUR" and found["total_price"] is None
+    # The fixture is an Airbnb booking: the balance is Airbnb's pending payout, not guest debt.
+    assert found["balance_due"] is None and found["total_price"] is None
+    assert found["extras"]["payout_pending_from_channel"] == 125.5
     shown = str(result)
     for leaked in (DOOR_CODE, "keyCode", "FAKE-CARD", "isUsingVCC", "moneyId"):
         assert leaked not in shown

@@ -13,7 +13,7 @@ from decimal import Decimal
 from typing import Final, cast
 from urllib.parse import quote
 
-from pmsbridge.pms.base import PMSValidationError
+from pmsbridge.pms.base import PMSNotFoundError, PMSValidationError
 from pmsbridge.pms.models import Money
 
 MAX_ID_LENGTH: Final = 200
@@ -32,6 +32,19 @@ def quote_id(value: str) -> str:
     if not cleaned or len(cleaned) > MAX_ID_LENGTH:
         raise PMSValidationError("The id is not valid.")
     return quote(cleaned, safe="")
+
+
+# Guesty object ids are 24 hexadecimal characters. Guesty answers a malformed listing id with a 500
+# ("provide a valid listing id") instead of a 404, so such ids are refused before any request.
+_OBJECT_ID_PATTERN: Final = re.compile(r"^[0-9a-fA-F]{24}$")
+
+
+def listing_id_of(value: str) -> str:
+    """A listing id fit for a path segment, or PMSNotFoundError for one Guesty could never have."""
+    cleaned = value.strip()
+    if not _OBJECT_ID_PATTERN.match(cleaned):
+        raise PMSNotFoundError("There is no listing with that id. Use an id from list_listings.")
+    return cleaned
 
 
 def as_dict(value: object) -> dict[str, object] | None:

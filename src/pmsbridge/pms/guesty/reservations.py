@@ -91,6 +91,9 @@ STATUS_TO_GUESTY: Final[dict[ReservationStatus, tuple[str, ...]]] = {
 }
 
 SEARCH_PATH: Final = "/reservations-v3/search"
+# Channels that always take the guest's payment themselves (Airbnb). For these, Guesty's balance
+# due is what the channel has not paid out to the host yet.
+CHANNEL_COLLECTS: Final = frozenset({"airbnb2"})
 # A Guesty id: 24 hexadecimal characters. Anything else is looked up as a confirmation code.
 _GUESTY_ID: Final = re.compile(r"[0-9a-fA-F]{24}")
 BY_IDS_PATH: Final = "/reservations-v3"
@@ -333,6 +336,11 @@ class GuestyReservations:
         reservation = await self._fetch(wanted)
         guest = await self._guest(wanted, reservation.guest_id)
         balance = await self._balance(wanted, reservation.confirmation_code)
+        if balance is not None and reservation.channel in CHANNEL_COLLECTS:
+            # The guest paid the channel, so Guesty's balance is the payout the channel still owes
+            # the host, not money the guest owes. It is shown as that, never as a balance due.
+            extras = {**reservation.extras, "payout_pending_from_channel": float(balance.amount)}
+            return reservation.model_copy(update={"guest": guest, "extras": extras})
         return reservation.model_copy(update={"guest": guest, "balance_due": balance})
 
     async def add_reservation_note(self, note: ReservationNote) -> Reservation:

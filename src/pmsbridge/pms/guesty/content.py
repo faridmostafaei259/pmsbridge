@@ -36,6 +36,7 @@ from pmsbridge.pms.guesty.common import (
     as_dict,
     as_list,
     count_of,
+    listing_id_of,
     number_of,
     quote_id,
     strings_of,
@@ -47,6 +48,7 @@ from pmsbridge.pms.models import (
     MAX_PHOTOS,
     DescriptionKind,
     ExtraValue,
+    HouseRules,
     ListingDescription,
     ListingDetails,
     ListingPhoto,
@@ -138,15 +140,17 @@ def map_details(listing_id: str, raw: object) -> ListingDetails:
     item = as_dict(raw)
     if item is None:
         raise PMSUpstreamError("Guesty returned a listing that could not be understood.")
+    descriptions = _descriptions(item)
+    rules = next((d.text for d in descriptions if d.kind is DescriptionKind.HOUSE_RULES), None)
     try:
         return ListingDetails(
             listing_id=listing_id,
-            descriptions=_descriptions(item),
+            descriptions=descriptions,
             amenities=strings_of(item.get("amenities"), limit=MAX_AMENITIES),
             amenities_not_included=strings_of(
                 item.get("amenitiesNotIncluded"), limit=MAX_AMENITIES
             ),
-            house_rules=None,
+            house_rules=HouseRules(additional_rules=rules) if rules is not None else None,
             rooms=[],
             check_in_instructions=_check_in_instructions(item.get("checkInInstructions")),
             custom_fields=_custom_fields(item.get("customFields")),
@@ -189,12 +193,12 @@ class GuestyContent:
 
     async def get_listing_details(self, listing_id: str) -> ListingDetails:
         response = await self._client.request(
-            "GET", f"/listings/{quote_id(listing_id)}", params={"fields": DETAIL_FIELDS}
+            "GET", f"/listings/{listing_id_of(listing_id)}", params={"fields": DETAIL_FIELDS}
         )
         return map_details(listing_id.strip(), response.json())
 
     async def list_listing_photos(self, listing_id: str) -> list[ListingPhoto]:
-        response = await self._client.request("GET", f"{PHOTOS_PATH}/{quote_id(listing_id)}")
+        response = await self._client.request("GET", f"{PHOTOS_PATH}/{listing_id_of(listing_id)}")
         return _photos(response.json())
 
     async def update_photo_caption(self, update: PhotoCaptionUpdate) -> ListingPhoto:
@@ -204,7 +208,7 @@ class GuestyContent:
         # Only the caption is sent. An address would replace the image, so it is never sent.
         response = await self._client.request(
             "POST",
-            f"{PHOTOS_PATH}/{quote_id(listing_id)}/{quote_id(photo_id)}",
+            f"{PHOTOS_PATH}/{listing_id_of(listing_id)}/{quote_id(photo_id)}",
             json_body={"caption": update.caption},
         )
         photos = _answer_photos(response, "changed")
@@ -225,7 +229,7 @@ class GuestyContent:
         _require_time("reordered")
         response = await self._client.request(
             "POST",
-            f"{PHOTOS_PATH}/{quote_id(listing_id)}/order",
+            f"{PHOTOS_PATH}/{listing_id_of(listing_id)}/order",
             json_body={"order": list(order.photo_ids)},
         )
         return _answer_photos(response, "reordered")
@@ -236,7 +240,7 @@ class GuestyContent:
         _require_time("deleted")
         # Guesty's answer to a deletion is not documented, so only the status is used.
         await self._client.request(
-            "DELETE", f"{PHOTOS_PATH}/{quote_id(listing_id)}/{quote_id(photo_id)}"
+            "DELETE", f"{PHOTOS_PATH}/{listing_id_of(listing_id)}/{quote_id(photo_id)}"
         )
         try:
             remaining = await self.list_listing_photos(listing_id)
@@ -268,8 +272,13 @@ class GuestyContent:
 
 
 def _photos(body: object) -> list[ListingPhoto]:
-    """The photos of a list or change answer (a bare array), in Guesty's order of position."""
+    """The photos of a list or change answer, in Guesty's order of position.
+
+    Guesty answers `{propertyId, photos: [...]}` (seen live); a bare array is also accepted.
+    """
     raw = as_list(body)
+    if raw is None and (envelope := as_dict(body)) is not None:
+        raw = as_list(envelope.get("photos"))
     if raw is None:
         raise PMSUpstreamError("Guesty returned a photo list that could not be understood.")
     mapped = [

@@ -14,7 +14,7 @@ from guesty_calendar_helpers import (
     mock_router,
 )
 
-from pmsbridge.pms.base import Capability, PMSNotFoundError, PMSUpstreamError, PMSValidationError
+from pmsbridge.pms.base import Capability, PMSNotFoundError, PMSUpstreamError
 from pmsbridge.pms.guesty import pricing
 from pmsbridge.pms.guesty.provider import DOMAIN_MODULES, discover_domains
 
@@ -102,14 +102,16 @@ async def test_the_request_names_only_the_price_and_term_fields(router: respx.Mo
     assert dict(route.calls.last.request.url.params)["fields"] == "_id prices terms"
 
 
-async def test_the_id_is_quoted_and_an_empty_one_refused(router: respx.MockRouter) -> None:
+async def test_a_malformed_or_empty_id_is_refused_before_any_request(
+    router: respx.MockRouter,
+) -> None:
     route = router.get(url__startswith=LISTING_URL.rsplit("/", 1)[0]).mock(
         return_value=json_response(fixture("pricing_full.json"))
     )
-    await pricing.build(make_client()).get_pricing_settings("a/b c")
-    assert route.calls.last.request.url.raw_path.split(b"?")[0].endswith(b"/listings/a%2Fb%20c")
-    with pytest.raises(PMSValidationError):
-        await pricing.build(make_client()).get_pricing_settings("  ")
+    for bad in ("a/b c", "  "):
+        with pytest.raises(PMSNotFoundError):
+            await pricing.build(make_client()).get_pricing_settings(bad)
+    assert route.call_count == 0
 
 
 async def test_a_missing_listing_is_a_plain_not_found(router: respx.MockRouter) -> None:

@@ -24,8 +24,8 @@ from pmsbridge.pms.guesty.common import (
     decode_cursor,
     encode_cursor,
     flag_of,
+    listing_id_of,
     number_of,
-    quote_id,
     strings_of,
     text_of,
 )
@@ -49,14 +49,22 @@ MAX_TAGS: Final = 50
 # sensitive parts of a listing out of the response.
 LIST_FIELDS: Final = (
     "_id title nickname active isListed isVirtual isTest propertyType roomType address bedrooms "
-    "accommodates timezone prices defaultCheckInTime defaultCheckOutTime tags terms cleaningStatus"
+    "bathrooms accommodates timezone prices defaultCheckInTime defaultCheckOutTime tags terms "
+    "cleaningStatus"
 )
 _CURRENCY_PATTERN: Final = re.compile(r"^[A-Z]{3}$")
 MAX_LATITUDE: Final = 90
 MAX_LONGITUDE: Final = 180
+MAX_BATHROOMS: Final = 1000
 
 
 # ---- Mapping ----
+
+
+def _bathrooms(value: object) -> float | None:
+    """Guesty's bathroom count (seen live as a number; may be fractional, such as 1.5)."""
+    count = number_of(value)
+    return float(count) if count is not None and 0 <= count <= MAX_BATHROOMS else None
 
 
 def _address(raw: object) -> Address | None:
@@ -130,7 +138,7 @@ def map_listing(raw: object) -> Listing | None:
             property_type=text_of(item.get("propertyType")),
             address=_address(item.get("address")),
             bedrooms=count_of(item.get("bedrooms")),
-            bathrooms=None,  # Guesty's listing record has no bathroom count
+            bathrooms=_bathrooms(item.get("bathrooms")),
             max_guests=count_of(item.get("accommodates")),
             timezone=text_of(item.get("timezone")),
             base_price=_base_price(item.get("prices")),
@@ -186,7 +194,7 @@ class GuestyListings:
 
     async def get_listing(self, listing_id: str) -> Listing:
         response = await self._client.request(
-            "GET", f"/listings/{quote_id(listing_id)}", params={"fields": LIST_FIELDS}
+            "GET", f"/listings/{listing_id_of(listing_id)}", params={"fields": LIST_FIELDS}
         )
         listing = map_listing(response.json())
         if listing is None:

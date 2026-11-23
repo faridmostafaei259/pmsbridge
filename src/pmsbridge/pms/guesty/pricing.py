@@ -14,7 +14,14 @@ from pydantic import ValidationError
 
 from pmsbridge.pms.base import Capability, PMSUpstreamError
 from pmsbridge.pms.guesty.client import GuestyClient
-from pmsbridge.pms.guesty.common import as_dict, count_of, money_of, number_of, quote_id, text_of
+from pmsbridge.pms.guesty.common import (
+    as_dict,
+    count_of,
+    listing_id_of,
+    money_of,
+    number_of,
+    text_of,
+)
 from pmsbridge.pms.models import Money, PricingSettings
 
 logger = logging.getLogger(__name__)
@@ -74,7 +81,7 @@ class GuestyPricing:
 
     async def get_pricing_settings(self, listing_id: str) -> PricingSettings:
         response = await self._client.request(
-            "GET", f"/listings/{quote_id(listing_id)}", params={"fields": FIELDS}
+            "GET", f"/listings/{listing_id_of(listing_id)}", params={"fields": FIELDS}
         )
         return map_pricing(listing_id.strip(), response.json())
 

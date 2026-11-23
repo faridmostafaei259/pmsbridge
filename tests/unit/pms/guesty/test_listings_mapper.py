@@ -151,7 +151,10 @@ def test_details_amenities_checkin_and_custom_fields() -> None:
         "Check-in method: door code. Alternative: lock box. Use the side entrance."
     )
     assert details.custom_fields == {"fieldA": "plain text", "fieldB": 12, "fieldC": True}
-    assert details.house_rules is None and details.rooms == []
+    # The house rules description is also given as the structured field's free text.
+    assert details.house_rules is not None
+    assert details.house_rules.additional_rules == "No parties."
+    assert details.house_rules.pets_allowed is None and details.rooms == []
 
 
 def test_minimal_details_do_not_fail() -> None:
@@ -191,3 +194,9 @@ def test_a_photo_without_an_index_uses_its_place_in_the_list() -> None:
 )
 def test_an_unusable_photo_is_skipped(raw: object) -> None:
     assert map_photo(raw, 0) is None
+
+
+@pytest.mark.parametrize(("raw", "expected"), [(1, 1.0), (1.5, 1.5), (None, None), ("2", None)])
+def test_bathrooms_come_from_guestys_count(raw: object, expected: float | None) -> None:
+    found = map_listing({"_id": "6a1f00000000000000000001", "bathrooms": raw})
+    assert found is not None and found.bathrooms == expected

@@ -44,6 +44,7 @@ from pmsbridge.pms.guesty.common import (
     as_list,
     count_of,
     date_of,
+    listing_id_of,
     money_of,
     number_of,
     quote_id,
@@ -358,12 +359,8 @@ class GuestyCalendar:
 
     @staticmethod
     def _checked_id(listing_id: str) -> str:
-        wanted = listing_id.strip()
-        quote_id(wanted)  # length and emptiness check; the id goes in as a query value for reads
-        if "," in wanted:
-            # Guesty reads a comma as a list of ids, and exactly one is wanted.
-            raise PMSValidationError("The id is not valid.")
-        return wanted
+        # A Guesty id has no comma, so one id is always exactly one listing.
+        return listing_id_of(listing_id)
 
     async def get_calendar(self, calendar_range: CalendarRange) -> list[CalendarDay]:
         wanted = self._checked_id(calendar_range.listing_id)

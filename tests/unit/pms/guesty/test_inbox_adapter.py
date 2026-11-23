@@ -75,9 +75,10 @@ async def test_list_sends_the_default_parameters(router: respx.MockRouter) -> No
     assert query_of(route) == {
         "type": "guest",
         "limit": "10",
+        "sort": "-modifiedAt",
         "fields": inbox.CONVERSATION_FIELDS,
     }
-    assert "createdAt" in inbox.CONVERSATION_FIELDS.split()  # else Guesty sends no cursor
+    assert "modifiedAt" in inbox.CONVERSATION_FIELDS.split()  # else Guesty sends no cursor
     assert route.calls.last.request.headers["authorization"] == "Bearer fake-access-token"
 
 

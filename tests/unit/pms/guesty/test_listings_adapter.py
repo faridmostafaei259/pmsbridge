@@ -180,31 +180,25 @@ async def test_an_unusable_listing_response_is_an_upstream_error(router: respx.M
         ("%2e%2e", "%252e%252e"),
     ],
 )
-async def test_an_id_never_changes_the_path(
+async def test_an_id_that_is_not_a_guesty_id_is_refused_before_any_request(
     router: respx.MockRouter, hostile: str, expected: str
 ) -> None:
+    del expected  # such an id never reaches a path at all
     route = router.get(url__regex=r".*").mock(return_value=json_response({"_id": "x"}))
-    api = listings.build(make_client())
-    try:
-        await api.get_listing(hostile)
-    except PMSValidationError:
-        # The client refuses paths that still hold a dot segment once decoded.
-        assert ".." in hostile or "%2e" in hostile.lower()
-        assert route.call_count == 0
-        return
-    assert route.calls.last.request.url.raw_path.decode().split("?")[0] == (
-        f"/v1/listings/{expected}"
-    )
+    with pytest.raises(PMSNotFoundError, match="no listing with that id"):
+        await listings.build(make_client()).get_listing(hostile)
+    assert route.call_count == 0
 
 
-@pytest.mark.parametrize("bad", ["", "   ", "x" * 201])
-async def test_an_empty_or_huge_id_is_refused(router: respx.MockRouter, bad: str) -> None:
+@pytest.mark.parametrize("bad", ["", "   ", "x" * 201, "not-a-real-id", "6a1" * 9])
+async def test_an_empty_huge_or_malformed_id_is_refused(router: respx.MockRouter, bad: str) -> None:
+    # Guesty answers a malformed listing id with a 500, so it is refused here as not found.
     route = router.get(url__regex=r".*").mock(return_value=json_response({}))
-    with pytest.raises(PMSValidationError):
+    with pytest.raises(PMSNotFoundError):
         await listings.build(make_client()).get_listing(bad)
-    with pytest.raises(PMSValidationError):
+    with pytest.raises(PMSNotFoundError):
         await content.build(make_client()).list_listing_photos(bad)
-    with pytest.raises(PMSValidationError):
+    with pytest.raises(PMSNotFoundError):
         await content.build(make_client()).get_listing_details(bad)
     assert route.call_count == 0
 
@@ -252,23 +246,40 @@ async def test_photos_are_sorted_by_index_and_unusable_ones_dropped(
 
 async def test_photo_errors(router: respx.MockRouter) -> None:
     api = content.build(make_client())
-    router.get(f"{PHOTOS_URL}/missing").mock(return_value=json_response({}, 404))
+    missing, denied, odd, empty = (f"6a10000000000000000000f{n}" for n in range(4))
+    router.get(f"{PHOTOS_URL}/{missing}").mock(return_value=json_response({}, 404))
     with pytest.raises(PMSNotFoundError):
-        await api.list_listing_photos("missing")
-    router.get(f"{PHOTOS_URL}/denied").mock(return_value=json_response({}, 403))
+        await api.list_listing_photos(missing)
+    router.get(f"{PHOTOS_URL}/{denied}").mock(return_value=json_response({}, 403))
     with pytest.raises(PMSPermissionError):
-        await api.list_listing_photos("denied")
-    router.get(f"{PHOTOS_URL}/odd").mock(return_value=json_response({"photos": []}))
+        await api.list_listing_photos(denied)
+    router.get(f"{PHOTOS_URL}/{odd}").mock(return_value=json_response({"pictures": []}))
     with pytest.raises(PMSUpstreamError):
-        await api.list_listing_photos("odd")
-
-
-async def test_photo_ids_are_quoted_in_the_path(router: respx.MockRouter) -> None:
-    route = router.get(url__regex=r".*").mock(return_value=json_response([]))
-    await content.build(make_client()).list_listing_photos("a/b")
-    assert route.calls.last.request.url.raw_path.decode() == (
-        "/v1/properties-api/property-photos/property-photos/a%2Fb"
+        await api.list_listing_photos(odd)
+    router.get(f"{PHOTOS_URL}/{empty}").mock(
+        return_value=json_response({"propertyId": empty, "photos": []})
     )
+    assert await api.list_listing_photos(empty) == []
+
+
+async def test_photos_are_read_from_guestys_photos_envelope(router: respx.MockRouter) -> None:
+    # Guesty answers `{propertyId, photos: [...]}` (seen on a live account).
+    listed = fixture("photos_three.json")
+    assert isinstance(listed, list)
+    router.get(f"{PHOTOS_URL}/{ID}").mock(
+        return_value=json_response({"propertyId": ID, "photos": listed})
+    )
+    photos = await content.build(make_client()).list_listing_photos(ID)
+    assert [photo.position for photo in photos] == [0, 1, 2]
+
+
+async def test_a_hostile_listing_id_never_reaches_the_photo_path(
+    router: respx.MockRouter,
+) -> None:
+    route = router.get(url__regex=r".*").mock(return_value=json_response([]))
+    with pytest.raises(PMSNotFoundError):
+        await content.build(make_client()).list_listing_photos("a/b")
+    assert route.call_count == 0
 
 
 # ---- photo changes ----
@@ -530,10 +541,12 @@ async def test_ids_stay_inside_their_path_segments(router: respx.MockRouter) -> 
     router.get(url__regex=r".*").mock(return_value=json_response(fixture("photos_three.json")))
     removal = router.delete(url__regex=r".*").mock(return_value=httpx.Response(204))
     api = content.build(make_client())
-    with pytest.raises(PMSNotFoundError):  # the photo is not listed, so nothing is deleted
+    with pytest.raises(PMSNotFoundError):  # not a Guesty id: refused before any request
         await api.delete_photo(PhotoDelete(listing_id="a/b", photo_id="c/d"))
+    with pytest.raises(PMSNotFoundError):  # the photo is not listed, so nothing is deleted
+        await api.delete_photo(PhotoDelete(listing_id=ID, photo_id="c/d"))
     assert removal.call_count == 0
-    assert router.calls.last.request.url.raw_path.decode().endswith("/property-photos/a%2Fb")
+    assert router.calls.last.request.url.raw_path.decode().endswith(f"/property-photos/{ID}")
     router.post(url__regex=r".*").mock(return_value=json_response([], 201))
     photo_id_with_slash = {
         "_id": "c/d",
@@ -543,9 +556,9 @@ async def test_ids_stay_inside_their_path_segments(router: respx.MockRouter) -> 
     router.get(url__regex=r".*").mock(return_value=json_response([photo_id_with_slash]))
     with pytest.raises(PMSUpstreamError):
         await api.update_photo_caption(
-            PhotoCaptionUpdate(listing_id="a/b", photo_id="c/d", caption="x")
+            PhotoCaptionUpdate(listing_id=ID, photo_id="c/d", caption="x")
         )
-    assert router.calls.last.request.url.raw_path.decode().endswith("/a%2Fb/c%2Fd")
+    assert router.calls.last.request.url.raw_path.decode().endswith(f"/{ID}/c%2Fd")
 
 
 async def test_no_photo_change_logs_the_caption_or_the_upstream_text(

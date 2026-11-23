@@ -159,6 +159,9 @@ notes: pmsbridge drops Guesty's key-code field, but a code typed into a normal n
   bookings such as Airbnb usually do not. `get_reservation` also shows the host payout
   (`money.hostPayout`), the amount paid (`money.totalPaid`) and the currency as extra values, and the
   balance due. Payments and payment methods are never shown.
+- **Balance on Airbnb bookings**: Airbnb takes the guest's payment, so the balance Guesty reports is the
+  payout Airbnb has not sent yet, not money the guest owes. For Airbnb bookings it is shown as the extra
+  value `payout_pending_from_channel` and the balance due is left empty.
 - **Several units in one booking**: for a booking that spans several listings or units, pmsbridge shows
   the first one (`stay[0]`), the first check-in to the last check-out, and the largest party. Filtering
   by property matches the first stay only.

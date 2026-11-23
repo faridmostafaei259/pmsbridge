@@ -449,7 +449,7 @@ async def test_a_listing_id_with_a_comma_is_refused(router: respx.MockRouter) ->
     bad = request(update("2030-12-20", "2030-12-21", min_nights=2)).model_copy(
         update={"listing_id": "a,b"}
     )
-    with pytest.raises(PMSValidationError):
+    with pytest.raises(PMSNotFoundError):  # not a Guesty id, so it can never name a listing
         await calendar.build(make_client()).update_calendar(bad)
     assert reads.call_count == 0
 

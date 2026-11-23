@@ -23,7 +23,6 @@ from pmsbridge.pms.base import (
     Capability,
     PMSNotFoundError,
     PMSUpstreamError,
-    PMSValidationError,
     call_deadline,
 )
 from pmsbridge.pms.guesty import calendar
@@ -178,7 +177,7 @@ async def test_a_listing_id_with_a_comma_is_refused_before_any_request(
 ) -> None:
     route = router.get(CALENDAR_URL).mock(return_value=json_response([]))
     wanted = CalendarRange(listing_id="a,b", start=JUNE.start, end=JUNE.end)
-    with pytest.raises(PMSValidationError):
+    with pytest.raises(PMSNotFoundError):  # not a Guesty id, so it can never name a listing
         await calendar.build(make_client()).get_calendar(wanted)
     assert route.call_count == 0
 

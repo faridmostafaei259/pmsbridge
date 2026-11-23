@@ -324,11 +324,10 @@ async def test_a_hostile_id_cannot_leave_the_listing_path(
     world: World, guesty: respx.MockRouter
 ) -> None:
     route = guesty.get(url__regex=r".*").mock(return_value=json_response({"_id": "x"}))
-    await world.call("get_listing", listing_id="a/b")
-    assert route.calls.last.request.url.raw_path.decode().startswith("/v1/listings/a%2Fb")
-    before = route.call_count
-    refused = await world.call("get_listing", listing_id="../accounts")
-    assert refused["isError"] is True and route.call_count == before
+    for hostile in ("a/b", "../accounts"):
+        refused = await world.call("get_listing", listing_id=hostile)
+        assert refused["isError"] is True
+    assert route.call_count == 0
 
 
 # ---- Photo changes ----

@@ -110,12 +110,16 @@ to read.
 
 ## Known gaps
 
-- **Bathrooms** are not part of Guesty's listing record, so they are left empty. Guesty keeps them in a
-  separate "spaces" area that is not read yet.
+- **Bathrooms** come from the listing's `bathrooms` count (it can be a half, such as 1.5).
 - **State and postal code** are not part of the address on Guesty's listing record, so they are left
   empty.
-- **Rooms, beds and house rules** are left empty. Guesty serves them from separate endpoints that are
-  addressed by unit type, and the relation to a listing is not documented well enough to use.
+- **Rooms and beds** are left empty. Guesty serves them from separate endpoints that are addressed by
+  unit type, and the relation to a listing is not documented well enough to use.
+- **House rules**: the house rules text from the listing description is given as the free-text part of
+  the house rules (`additional_rules`). Pets, smoking and the other yes-or-no rules are left empty.
+- **Listing ids**: a Guesty listing id is 24 letters and digits (0-9, a-f). Guesty answers any other id
+  with a server error instead of "not found", so pmsbridge answers "there is no listing with that id"
+  itself, without asking Guesty.
 - **Description keys**: Guesty does not document the keys inside `publicDescription`. pmsbridge reads
   every text value in it and labels the well-known keys (summary, space, access, neighborhood, transit,
   interaction, notes, house rules); other keys are shown as "other".

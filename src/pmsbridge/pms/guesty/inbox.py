@@ -60,10 +60,12 @@ CAPABILITIES: Final = frozenset({Capability.INBOX_READ, Capability.INBOX_SEND})
 
 CONVERSATIONS_PATH: Final = "/communication/conversations"
 # Guesty's default fields leave out the channel (`integration`) and the last message (`state`).
-# `createdAt` must stay in the list, or Guesty returns no paging cursor.
+# Conversations are sorted by their latest activity (`modifiedAt`, which moves with each message);
+# Guesty only returns a paging cursor when the sort field is in the list, so it must stay there.
 CONVERSATION_FIELDS: Final = (
-    "guest reservation status assignee priority createdAt integration state"
+    "guest reservation status assignee priority createdAt modifiedAt integration state"
 )
+CONVERSATION_SORT: Final = "-modifiedAt"
 MIN_SECONDS_PER_WRITE: Final = 2.0
 
 # `module.type` values that reach the guest. `note` and `log` never do. `airbnb2` has no canonical
@@ -252,6 +254,7 @@ class GuestyInbox:
         params: dict[str, str | int] = {
             "type": "guest",
             "limit": query.limit,
+            "sort": CONVERSATION_SORT,
             "fields": CONVERSATION_FIELDS,
         }
         if filters:
