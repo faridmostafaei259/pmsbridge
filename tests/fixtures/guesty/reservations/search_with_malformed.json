@@ -1,0 +1,23 @@
+{
+  "results": [
+    "not an object",
+    {"confirmationCode": "TST-2000", "status": "confirmed"},
+    {"reservationId": "6a2000000000000000000011", "status": "confirmed", "stay": []},
+    {
+      "reservationId": "6a2000000000000000000012",
+      "status": "confirmed",
+      "checkInDateLocalized": "2027-07-10",
+      "checkOutDateLocalized": "2027-07-05",
+      "stay": [{"listingId": "6a1f00000000000000000001"}]
+    },
+    {
+      "reservationId": "6a2000000000000000000013",
+      "confirmationCode": "TST-2013",
+      "status": "confirmed",
+      "checkInDateLocalized": "2027-07-10",
+      "checkOutDateLocalized": "2027-07-12",
+      "stay": [{"listingId": "6a1f00000000000000000001"}]
+    }
+  ],
+  "pagination": {"skip": 0, "limit": 5, "hasMore": false}
+}

@@ -1,0 +1,31 @@
+[
+  {
+    "_id": "6a2000000000000000000001",
+    "confirmationCode": "TST-1001",
+    "status": "confirmed",
+    "bookerId": "6a2000000000000000000a01",
+    "platform": "airbnb2",
+    "source": "airbnb",
+    "checkInDateLocalized": "2027-03-10",
+    "checkOutDateLocalized": "2027-03-14",
+    "createdAt": "2027-01-05T09:30:00.000Z",
+    "integrationId": "6a2000000000000000000f01",
+    "moneyId": "6a2000000000000000000e01",
+    "isUsingVCC": true,
+    "keyCode": "FAKE-DOOR-4821",
+    "stay": [
+      {
+        "unitId": "6a1f00000000000000000001",
+        "unitTypeId": "6a1f00000000000000000001",
+        "checkInDateLocalized": "2027-03-10",
+        "checkOutDateLocalized": "2027-03-14",
+        "guestsCount": 3
+      }
+    ],
+    "notes": {
+      "guest": "Arriving late, after nine.",
+      "keyCode": "FAKE-DOOR-4821",
+      "doneBy": "Invented Staffmember"
+    }
+  }
+]

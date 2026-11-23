@@ -1,0 +1,14 @@
+{
+  "results": [
+    {
+      "reservationId": "6a2000000000000000000004",
+      "confirmationCode": "TST-1004",
+      "status": "reserved",
+      "checkInDateLocalized": "2027-06-01",
+      "checkOutDateLocalized": "2027-06-02",
+      "stay": [{"listingId": "6a1f00000000000000000003", "guestsCount": 1}],
+      "notes": {}
+    }
+  ],
+  "pagination": {"skip": 3, "limit": 3, "hasMore": false}
+}

@@ -8,14 +8,19 @@ import base64
 import binascii
 import math
 import re
+from datetime import UTC, date, datetime
+from decimal import Decimal
 from typing import Final, cast
 from urllib.parse import quote
 
 from pmsbridge.pms.base import PMSValidationError
+from pmsbridge.pms.models import Money
 
 MAX_ID_LENGTH: Final = 200
 MAX_SKIP: Final = 100_000
 _CURSOR_PATTERN: Final = re.compile(r"^skip=(\d{1,6})$")
+_DATE_PATTERN: Final = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+_CURRENCY_PATTERN: Final = re.compile(r"^[A-Z]{3}$")
 
 
 def quote_id(value: str) -> str:
@@ -56,6 +61,48 @@ def flag_of(value: object) -> bool | None:
 def count_of(value: object) -> int | None:
     number = number_of(value)
     return int(number) if number is not None and number >= 0 else None
+
+
+def date_of(value: object) -> date | None:
+    """A calendar date written exactly as YYYY-MM-DD, else None."""
+    text = text_of(value)
+    if text is None or not _DATE_PATTERN.match(text):
+        return None
+    try:
+        return date.fromisoformat(text)
+    except ValueError:
+        return None
+
+
+def datetime_of(value: object, *, naive_as_utc: bool = False) -> datetime | None:
+    """An ISO 8601 instant as an aware datetime.
+
+    A bare date is always None. A datetime without an offset is None unless `naive_as_utc` is set,
+    which reads it as UTC. Only set it where Guesty documents the value as UTC (for example
+    `createdAt`). Never set it for Guesty's listing-local datetimes that carry no offset (such as
+    the reports `checkIn`): reading those as UTC would be wrong by the listing's time zone.
+    """
+    text = text_of(value)
+    if text is None:
+        return None
+    try:
+        parsed = datetime.fromisoformat(text)
+    except ValueError:
+        return None
+    if parsed.tzinfo is not None:
+        return parsed
+    if not naive_as_utc or len(text) <= len("YYYY-MM-DD"):
+        return None
+    return parsed.replace(tzinfo=UTC)
+
+
+def money_of(amount: object, currency: object) -> Money | None:
+    """An amount (a finite JSON number) and a three-letter currency code (any case), else None."""
+    value, text = number_of(amount), text_of(currency)
+    code = text.upper() if text is not None else None
+    if value is None or code is None or not _CURRENCY_PATTERN.match(code):
+        return None
+    return Money(amount=Decimal(str(value)), currency=code)
 
 
 def strings_of(value: object, *, limit: int) -> list[str]:

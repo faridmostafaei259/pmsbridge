@@ -15,6 +15,7 @@ nav:
       - Guesty:
           - Overview: providers/guesty/index.md
           - Listings: providers/guesty/listings.md
+          - Reservations: providers/guesty/reservations.md
   - Configuration: configuration.md
   - Architecture: architecture.md
   - Security model: security/threat-model.md

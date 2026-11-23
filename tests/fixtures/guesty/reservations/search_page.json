@@ -1,0 +1,80 @@
+{
+  "results": [
+    {
+      "reservationId": "6a2000000000000000000001",
+      "confirmationCode": "TST-1001",
+      "status": "confirmed",
+      "guestId": "6a2000000000000000000a01",
+      "channel": "airbnb2",
+      "source": "airbnb",
+      "checkIn": "2027-03-10T15:00:00.000Z",
+      "checkOut": "2027-03-14T10:00:00.000Z",
+      "checkInDateLocalized": "2027-03-10",
+      "checkOutDateLocalized": "2027-03-14",
+      "createdAt": "2027-01-05T09:30:00.000Z",
+      "lastUpdatedAt": "2027-01-06T09:30:00.000Z",
+      "guestStay": {"status": "not_set"},
+      "channelMetadata": {"externalReservationId": "EXT-INVENTED-1", "merchantOfRecord": "CHANNEL"},
+      "isUsingVCC": true,
+      "stay": [
+        {
+          "listingId": "6a1f00000000000000000001",
+          "checkInDateLocalized": "2027-03-10",
+          "checkOutDateLocalized": "2027-03-14",
+          "guestsCount": 3,
+          "numberOfGuests": {"numberOfAdults": 2, "numberOfChildren": 1}
+        }
+      ],
+      "notes": {
+        "guest": "Arriving late, after nine.",
+        "specialRequests": "Extra towels please.",
+        "other": "Repeat guest.",
+        "cleaning": "Deep clean before arrival.",
+        "keyCode": "FAKE-DOOR-4821",
+        "doneBy": "Invented Staffmember"
+      }
+    },
+    {
+      "reservationId": "6a2000000000000000000002",
+      "confirmationCode": "TST-1002",
+      "status": "canceled",
+      "guestId": "6a2000000000000000000a02",
+      "channel": "direct",
+      "source": "manual",
+      "checkInDateLocalized": "2027-04-01",
+      "checkOutDateLocalized": "2027-04-03",
+      "createdAt": "2027-02-01T12:00:00.000Z",
+      "stay": [
+        {
+          "listingId": "6a1f00000000000000000002",
+          "checkInDateLocalized": "2027-04-01",
+          "checkOutDateLocalized": "2027-04-03",
+          "guestsCount": 2
+        }
+      ],
+      "notes": {}
+    },
+    {
+      "reservationId": "6a2000000000000000000003",
+      "confirmationCode": "TST-1003",
+      "status": "checked_in",
+      "guestId": "6a2000000000000000000a03",
+      "channel": "bookingCom",
+      "source": "booking.com",
+      "checkInDateLocalized": "2027-05-20",
+      "checkOutDateLocalized": "2027-05-27",
+      "createdAt": "2027-03-15T08:00:00.000Z",
+      "guestStay": {"status": "checked_in"},
+      "stay": [
+        {
+          "listingId": "6a1f00000000000000000001",
+          "checkInDateLocalized": "2027-05-20",
+          "checkOutDateLocalized": "2027-05-27",
+          "guestsCount": 4
+        }
+      ],
+      "notes": {"cleaning": "Leave spare key with neighbour."}
+    }
+  ],
+  "pagination": {"skip": 0, "limit": 3, "hasMore": true}
+}

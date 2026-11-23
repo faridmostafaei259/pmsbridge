@@ -43,6 +43,19 @@ Returns the listing's descriptions, the amenities it has and does not have, how 
 | `listing_id` | string | yes | The listing id from list_listings. |
 | `connection` | string (optional) | no | The connection to use: its name or id as shown by list_connections. Optional when only one connection is available. |
 
+## `get_reservation`
+
+**Read only.**
+
+Get one reservation by its id, with the guest's contact details and balance.
+
+Returns the dates, status, channel, confirmation code, notes, and, when the property management system provides them, the guest's name, email and phone and the balance the guest still owes. Door and lock codes are never shown. Fails with a clear message if the reservation does not exist.
+
+| Argument | Type | Required | Description |
+|---|---|---|---|
+| `reservation_id` | string | yes | The reservation id from list_reservations. |
+| `connection` | string (optional) | no | The connection to use: its name or id as shown by list_connections. Optional when only one connection is available. |
+
 ## `list_connections`
 
 **Read only.**
@@ -79,5 +92,28 @@ Returns a page of listings with name, address, bedrooms, guest capacity, base pr
 | `search` | string (optional) | no | Text to look for in the listing title, address or internal note. Omit for all. |
 | `active_only` | boolean | no | Only active listings. Use false to also ask for inactive ones (the property management system may still hide some). |
 | `limit` | integer (optional) | no | How many listings to return (1 to 100). |
+| `cursor` | string (optional) | no | The next_cursor of the previous result, to get the next page. |
+| `connection` | string (optional) | no | The connection to use: its name or id as shown by list_connections. Optional when only one connection is available. |
+
+## `list_reservations`
+
+**Read only.**
+
+List reservations, earliest check-in first, optionally filtered.
+
+The earliest check-in comes first (set check_in_from to leave out past bookings). Returns a page of reservations with dates, nights, status, channel, confirmation code and guest count. List results leave out the guest's contact details and the money; use get_reservation for one booking to get them when the property management system provides them. Dates are written YYYY-MM-DD. When next_cursor is set there are more; pass it back as cursor.
+
+| Argument | Type | Required | Description |
+|---|---|---|---|
+| `listing_id` | string (optional) | no | Only reservations for this listing id (from list_listings). |
+| `statuses` | list of value (optional) | no | Only reservations in one of these statuses: inquiry, pending, confirmed, checked_in, checked_out, cancelled, declined, expired or unknown. Omit for every status. |
+| `check_in_from` | string (optional) | no | Check-in on or after this day, a date written YYYY-MM-DD. |
+| `check_in_to` | string (optional) | no | Check-in on or before this day, a date written YYYY-MM-DD. |
+| `check_out_from` | string (optional) | no | Check-out on or after this day, a date written YYYY-MM-DD. |
+| `check_out_to` | string (optional) | no | Check-out on or before this day, a date written YYYY-MM-DD. |
+| `created_from` | string (optional) | no | Booked on or after this day, a date written YYYY-MM-DD. |
+| `created_to` | string (optional) | no | Booked on or before this day, a date written YYYY-MM-DD. |
+| `search` | string (optional) | no | A confirmation code or guest name to look for. What is matched depends on the property management system; if a name finds nothing, list by date instead and check the guest on each booking with get_reservation. Omit for all. |
+| `limit` | integer (optional) | no | How many reservations to return (1 to 100). |
 | `cursor` | string (optional) | no | The next_cursor of the previous result, to get the next page. |
 | `connection` | string (optional) | no | The connection to use: its name or id as shown by list_connections. Optional when only one connection is available. |

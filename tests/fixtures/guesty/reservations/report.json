@@ -1,0 +1,22 @@
+{
+  "results": [
+    {
+      "reservationId": "6a2000000000000000000999",
+      "confirmationCode": "TST-1001",
+      "money": {"currency": "EUR", "balanceDue": 1.0}
+    },
+    {
+      "reservationId": "6a2000000000000000000001",
+      "confirmationCode": "TST-1001",
+      "numberOfNights": 4,
+      "guest": {"fullName": "Alex Invented"},
+      "money": {
+        "currency": "EUR",
+        "balanceDue": 125.5,
+        "totalPaid": 300,
+        "payments": [{"paymentMethod": "FAKE-CARD-0000", "amount": 300}]
+      }
+    }
+  ],
+  "pagination": {"skip": 0, "limit": 10, "hasMore": false}
+}

@@ -54,6 +54,7 @@ All notable changes to this project are documented here. The format follows
 - A record of every AI assistant tool call (person, assistant, connection, tool, outcome, time taken; never request details, personal data or tokens), deleted after `AUDIT_RETENTION_DAYS` (90 by default). New database migration.
 - Generated tool reference and a guide for connecting an AI assistant.
 - Guesty listings (read only): `list_listings`, `get_listing`, `get_listing_details` and `list_listing_photos` let an AI assistant list properties, look one up, read its descriptions, amenities and check-in instructions, and see its photos. Guesty's staff-only listing text is never read.
+- Guesty reservations (read only): `list_reservations` (filters for property, status, check-in, check-out, booking date and confirmation code, with paging) and `get_reservation` (adds the guest's name, email and phone and the balance due when Guesty provides them). Door and lock codes are never read.
 
 ### Changed
 - Replacing a connection's credentials keeps its id, so approved AI assistants keep working, and returns a connection that needed attention to working.
