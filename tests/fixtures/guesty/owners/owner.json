@@ -1,0 +1,21 @@
+{
+  "_id": "6a5000000000000000000b01",
+  "firstName": "Robin",
+  "lastName": "Madeup",
+  "fullName": "Robin Madeup",
+  "email": "robin.madeup@example.test",
+  "phone": "+15550301",
+  "listings": ["6a1000000000000000000c01", "6a1000000000000000000c02"],
+  "active": true,
+  "locale": "en-US",
+  "accountId": "acct-fake-owner-1",
+  "address": "9 Invented Lane, Faketown",
+  "personalAddress": {"street": "9 Invented Lane", "city": "Faketown"},
+  "taxId": "FAKE-TAX-ID-55",
+  "payoutMethods": [
+    {"type": "bank", "iban": "FAKE-IBAN-GB00-0000", "routingNumber": "FAKE-ROUTING-0001"}
+  ],
+  "bankAccount": {"accountNumber": "FAKE-ACCOUNT-123456", "bin": "411199"},
+  "workingCapital": {"balance": 1234.5},
+  "ownersPortalSettings": {"allowReservations": true}
+}

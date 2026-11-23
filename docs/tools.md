@@ -101,6 +101,19 @@ Returns the listing's descriptions, the amenities it has and does not have, how 
 | `listing_id` | string | yes | The listing id from list_listings. |
 | `connection` | string (optional) | no | The connection to use: its name or id as shown by list_connections. Optional when only one connection is available. |
 
+## `get_owner`
+
+**Read only.**
+
+Get one property owner by id: name, email, phone and the ids of their listings.
+
+Payout, bank and tax details are never shown. Fails with a clear message if the owner does not exist.
+
+| Argument | Type | Required | Description |
+|---|---|---|---|
+| `owner_id` | string | yes | The owner id, for example from list_owners. |
+| `connection` | string (optional) | no | The connection to use: its name or id as shown by list_connections. Optional when only one connection is available. |
+
 ## `get_pricing_settings`
 
 **Read only.**
@@ -196,6 +209,33 @@ Returns a page of listings with name, address, bedrooms, guest capacity, base pr
 | `active_only` | boolean | no | Only active listings. Use false to also ask for inactive ones (the property management system may still hide some). |
 | `limit` | integer (optional) | no | How many listings to return (1 to 100). |
 | `cursor` | string (optional) | no | The next_cursor of the previous result, to get the next page. |
+| `connection` | string (optional) | no | The connection to use: its name or id as shown by list_connections. Optional when only one connection is available. |
+
+## `list_owners`
+
+**Read only.**
+
+List the property owners in the property management system.
+
+Returns a page of owners with name, email, phone and the ids of their listings (use get_listing for a listing). Payout, bank and tax details are never shown. When next_cursor is set there are more; pass it back as cursor.
+
+| Argument | Type | Required | Description |
+|---|---|---|---|
+| `limit` | integer (optional) | no | How many owners to return (1 to 100). |
+| `cursor` | string (optional) | no | The next_cursor of the previous result, to get the next page. |
+| `connection` | string (optional) | no | The connection to use: its name or id as shown by list_connections. Optional when only one connection is available. |
+
+## `list_reservation_payments`
+
+**Read only.**
+
+List the payments recorded for one reservation.
+
+Returns each payment with its amount and currency, status (pending, paid, failed, refunded, partially refunded, cancelled or unknown), a plain method word when known, and the times it is due and was paid. Card numbers, bank details and payment method ids are never shown. Fails with a clear message if the reservation does not exist.
+
+| Argument | Type | Required | Description |
+|---|---|---|---|
+| `reservation_id` | string | yes | The reservation id, from list_reservations or get_reservation. |
 | `connection` | string (optional) | no | The connection to use: its name or id as shown by list_connections. Optional when only one connection is available. |
 
 ## `list_reservations`

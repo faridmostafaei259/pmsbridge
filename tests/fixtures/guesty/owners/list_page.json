@@ -1,0 +1,30 @@
+{
+  "skip": 0,
+  "limit": 3,
+  "count": 3,
+  "totalCount": 7,
+  "sort": "_id",
+  "results": [
+    {
+      "_id": "6a5000000000000000000b01",
+      "firstName": "Robin",
+      "lastName": "Madeup",
+      "fullName": "Robin Madeup",
+      "email": "robin.madeup@example.test",
+      "phone": "+15550301",
+      "listings": ["6a1000000000000000000c01", "6a1000000000000000000c02"],
+      "taxId": "FAKE-TAX-ID-55",
+      "payoutMethods": [{"iban": "FAKE-IBAN-GB00-0000", "routingNumber": "FAKE-ROUTING-0001"}],
+      "bankAccount": {"accountNumber": "FAKE-ACCOUNT-123456"}
+    },
+    {
+      "_id": "6a5000000000000000000b02",
+      "firstName": "Jules",
+      "lastName": "Invented",
+      "email": "jules.invented@example.test",
+      "listings": [{"_id": "6a1000000000000000000c03", "nickname": "Dune"}, "6a1000000000000000000c03"],
+      "address": "9 Invented Lane, Faketown"
+    },
+    {"_id": "6a5000000000000000000b03", "listings": {"unexpected": "shape"}}
+  ]
+}

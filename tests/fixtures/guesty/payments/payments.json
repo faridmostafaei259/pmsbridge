@@ -1,0 +1,66 @@
+{
+  "payments": [
+    {
+      "_id": "6a6000000000000000000d01",
+      "reservationId": "6a4000000000000000000e01",
+      "accountId": "acct-fake-pay-1",
+      "paymentMethodId": "pm_fake_555",
+      "status": "SUCCEEDED",
+      "amount": 400,
+      "currency": "EUR",
+      "shouldBePaidAt": "2026-03-01T10:00:00.000Z",
+      "paidAt": "2026-03-01T10:00:05.000Z",
+      "createdAt": "2026-02-20T09:00:00.000Z",
+      "confirmationCode": "pi_fake_confirm_666",
+      "receiptId": 424242,
+      "payoutId": "po_fake_777",
+      "paymentMethod": {"method": "CARD", "last4": "9917", "brand": "VisaFake", "bin": "411199"},
+      "refunds": [
+        {
+          "_id": "r1",
+          "amount": 100,
+          "status": "SUCCEEDED",
+          "refundedAt": "2026-03-05T12:00:00.000Z",
+          "note": "Secret refund note",
+          "paymentMethodId": "pm_fake_555"
+        }
+      ]
+    },
+    {
+      "_id": "6a6000000000000000000d02",
+      "reservationId": "6a4000000000000000000e01",
+      "paymentMethodId": "pm_fake_555",
+      "status": "PENDING",
+      "amount": 250.5,
+      "currency": "EUR",
+      "shouldBePaidAt": "2026-04-01T10:00:00.000Z"
+    },
+    {
+      "_id": "6a6000000000000000000d03",
+      "reservationId": "6a4000000000000000000e01",
+      "paymentMethodId": "pm_fake_555",
+      "status": "FAILED",
+      "amount": 75,
+      "paymentMethod": {"method": "bank_transfer", "iban": "FAKE-IBAN-GB00-0000"},
+      "processorError": {"code": "card_declined", "message": "Declined for FAKE reason"},
+      "error": "card_declined"
+    },
+    {
+      "_id": "6a6000000000000000000d04",
+      "reservationId": "6a4000000000000000000e01",
+      "paymentMethodId": "pm_fake_555",
+      "status": "AUTHORIZATION_HOLD_SUCCEEDED",
+      "isAuthorizationHold": true,
+      "amount": 500,
+      "currency": "EUR"
+    }
+  ],
+  "balanceDue": 325.5,
+  "paymentsDue": 325.5,
+  "totalPaid": 400,
+  "totalRefunded": 100,
+  "isFullyPaid": false,
+  "currency": "EUR",
+  "hostPayout": 900,
+  "invalidCreditCard": {"last4": "9917"}
+}

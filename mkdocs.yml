@@ -20,6 +20,8 @@ nav:
           - Guests: providers/guesty/guests.md
           - Inbox and messages: providers/guesty/inbox.md
           - Reviews: providers/guesty/reviews.md
+          - Owners: providers/guesty/owners.md
+          - Payments: providers/guesty/payments.md
   - Configuration: configuration.md
   - Architecture: architecture.md
   - Security model: security/threat-model.md

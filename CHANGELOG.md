@@ -62,6 +62,8 @@ All notable changes to this project are documented here. The format follows
 - Guesty inbox tools: list conversations (filter by reservation, listing or unread), read a conversation's messages, and send a message to a guest (off until an administrator allows changes; the message goes out once and is never repeated automatically).
 - A tool to add an internal note to a conversation. Guesty documents no way to do this without risking the guest seeing it, so it is refused with a clear message for now.
 - Guesty reviews: `list_reviews` lists guest reviews (rating with its scale, public text, existing reply, channel, dates) and `reply_to_review` posts one public reply. Replying needs the connection's change switch, is sent once and never repeated, and is refused when the review already has a reply.
+- Owner tools for Guesty: `list_owners` and `get_owner` (name, email, phone and listing ids; payout, bank and tax details are never requested or shown).
+- `list_reservation_payments` for Guesty: the payments of a reservation with amount, status, a plain method word and due and paid times; card, bank and payment method details are never shown.
 
 ### Changed
 - A connection name that matches several allowed connections only by upper or lower case gets a clear message listing them.
