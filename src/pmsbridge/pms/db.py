@@ -11,7 +11,16 @@ import json
 from datetime import datetime
 from typing import Final
 
-from sqlalchemy import CheckConstraint, ForeignKey, Integer, LargeBinary, String, select
+from sqlalchemy import (
+    Boolean,
+    CheckConstraint,
+    ForeignKey,
+    Integer,
+    LargeBinary,
+    String,
+    false,
+    select,
+)
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -40,7 +49,7 @@ class PMSConnection(Base):
     provider: Mapped[str] = mapped_column(String(16))
     label: Mapped[str] = mapped_column(String(LABEL_MAX_LENGTH), unique=True)
     status: Mapped[str] = mapped_column(String(20), default="active", server_default="active")
-    # JSON object sealed by the vault (see `seal_credentials`).
+    # JSON object sealed by the vault (see `sealed_credential_columns`).
     credentials: Mapped[bytes] = mapped_column(LargeBinary)
     # The Guesty account the credentials belong to. The same account cannot be added twice.
     guesty_account_id: Mapped[str | None] = mapped_column(String(64), unique=True, default=None)
@@ -52,6 +61,9 @@ class PMSConnection(Base):
     created_at: Mapped[datetime] = mapped_column(UtcDateTime)
     updated_at: Mapped[datetime] = mapped_column(UtcDateTime)
     last_success_at: Mapped[datetime | None] = mapped_column(UtcDateTime, default=None)
+    # Whether AI assistants may use write tools on this connection. Off until an administrator
+    # turns it on, per connection.
+    writes_enabled: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false())
 
 
 class PMSToken(Base):
@@ -95,7 +107,7 @@ async def client_id_in_use(
     return await db.scalar(query) is not None
 
 
-def seal_credentials(connection_id: str, credentials: dict[str, str]) -> bytes:
+def _seal_credentials(connection_id: str, credentials: dict[str, str]) -> bytes:
     return get_vault().encrypt(json.dumps(credentials).encode(), credentials_aad(connection_id))
 
 
@@ -105,7 +117,7 @@ def sealed_credential_columns(
     """The column values to store whenever credentials are sealed (new or replaced)."""
     client_id = credentials["client_id"]
     return {
-        "credentials": seal_credentials(connection_id, credentials),
+        "credentials": _seal_credentials(connection_id, credentials),
         "client_id_digest": client_id_digest_for(client_id),
         "client_id_hint": client_id[-4:],
     }

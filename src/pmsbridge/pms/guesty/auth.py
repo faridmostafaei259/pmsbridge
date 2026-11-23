@@ -29,6 +29,7 @@ fixed for a connection and unique across connections.
 import asyncio
 import base64
 import binascii
+import contextvars
 import json
 import logging
 import math
@@ -39,9 +40,10 @@ from typing import Final, cast
 
 import httpx
 from sqlalchemy import select
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from pmsbridge.core.crypto import VaultError
 from pmsbridge.core.settings import get_settings
 from pmsbridge.core.storage import session, write_transaction
 from pmsbridge.pms.base import (
@@ -51,13 +53,24 @@ from pmsbridge.pms.base import (
     PMSUpstreamError,
     remaining_seconds,
 )
-from pmsbridge.pms.db import PMSConnection, PMSToken, open_token, seal_token
+from pmsbridge.pms.db import (
+    PMSConnection,
+    PMSToken,
+    client_id_digest_for,
+    client_id_in_use,
+    open_credentials,
+    open_token,
+    seal_token,
+    sealed_credential_columns,
+)
 
 logger = logging.getLogger(__name__)
 
 TOKEN_URL: Final = "https://open-api.guesty.com/oauth2/token"  # noqa: S105  (an address)
 JWT_PARTS: Final = 3
 TOKEN_TIMEOUT_SECONDS: Final = 10.0
+# The whole token exchange, including reading the body, must end within this time.
+TOKEN_TOTAL_SECONDS: Final = 30.0
 BUDGET_LOW_AT: Final = 1
 # While the budget is low, a token that is still valid is kept until it is this close to expiry.
 LOW_BUDGET_SAFETY_SECONDS: Final = 120
@@ -146,13 +159,15 @@ def _budget_message(reset_at: datetime | None, now: datetime) -> str:
 async def _request_token(credentials: GuestyCredentials) -> IssuedToken:
     """Ask Guesty for one token. Never retries. Only this module calls it.
 
-    The 10 second timeout is deliberately not shortened to the caller's deadline: a token that was
-    requested should be received and stored, because it has already been counted.
+    The timeouts (10 seconds per step, 30 seconds in all) are deliberately not shortened to the
+    caller's deadline: a token that was requested should be received and stored, because it has
+    already been counted. Running out of time takes the same path as a network failure.
     """
     now = _now()
     body: bytes | None
     try:
         async with (
+            asyncio.timeout(TOKEN_TOTAL_SECONDS),
             httpx.AsyncClient(
                 timeout=httpx.Timeout(TOKEN_TIMEOUT_SECONDS), follow_redirects=False
             ) as client,
@@ -179,7 +194,7 @@ async def _request_token(credentials: GuestyCredentials) -> IssuedToken:
                 chunks.append(chunk)
             else:
                 body = b"".join(chunks)
-    except httpx.HTTPError:
+    except (httpx.HTTPError, TimeoutError):
         raise _TokenRequestError(
             PMSUpstreamError(
                 "Guesty could not be reached to get an access token. The request was not "
@@ -341,16 +356,20 @@ _blocked_until: dict[str, datetime] = {}
 # After a failed token request: (no new request before, length of this pause).
 _cooldown: dict[str, tuple[datetime, timedelta]] = {}
 _last_touch: dict[str, float] = {}
+# A token Guesty issued that could not be written to the database, by connection. It is used and
+# stored again before Guesty is asked for another token.
+_unsaved: dict[str, IssuedToken] = {}
 
 
 def forget_connection(connection_id: str) -> None:
-    """Forget the blocks, cool-down and last-success time of one connection.
+    """Forget the blocks, cool-down, unsaved token and last-success time of one connection.
 
     Called when its credentials are replaced. Locks and refreshes in flight are left alone.
     """
     _blocked_until.pop(connection_id, None)
     _cooldown.pop(connection_id, None)
     _last_touch.pop(connection_id, None)
+    _unsaved.pop(connection_id, None)
 
 
 def reset_token_state() -> None:
@@ -360,6 +379,24 @@ def reset_token_state() -> None:
     _blocked_until.clear()
     _cooldown.clear()
     _last_touch.clear()
+    _unsaved.clear()
+
+
+SUPERSEDED_TEXT: Final = (
+    "The credentials of this connection were replaced while a token was being requested. "
+    "The old token was discarded. Try again."
+)
+
+
+def _issued_for_current_key(issued: IssuedToken, conn: PMSConnection) -> bool:
+    """Compare and swap: only a token for the client id now stored may be stored.
+
+    A token requested with credentials that were replaced meanwhile (here, or by a command run
+    in another process) is discarded instead of being written over the new key's token.
+    """
+    claims = decode_jwt_claims(issued.access_token)
+    cid = claims.get("cid") if claims else None
+    return isinstance(cid, str) and client_id_digest_for(cid) == conn.client_id_digest
 
 
 def _check_usable(conn: PMSConnection | None) -> PMSConnection:
@@ -368,6 +405,91 @@ def _check_usable(conn: PMSConnection | None) -> PMSConnection:
     if conn.status == "needs_attention":
         raise PMSAuthError(NEEDS_ATTENTION_TEXT)
     return conn
+
+
+async def replace_credentials(connection_id: str, client_id: str, client_secret: str) -> None:
+    """Swap an existing connection's credentials for new ones that Guesty accepts.
+
+    The only way to test credentials for a connection that already exists. It takes the connection
+    lock and waits for a refresh in flight, so no other token request runs meanwhile. Under the
+    lock it does nothing (and asks for no token) when the stored credentials already equal the
+    submitted ones and the stored token is usable, and it refuses a key that another connection
+    uses. Otherwise it gets one token with the new credentials (one of the five daily tokens), and
+    in a single write replaces the credentials and token, keeps the connection id, and puts a
+    connection that needed attention back to active. The old credentials stay untouched unless the
+    new ones are accepted. Raises a `PMSError` otherwise (including a different account).
+    """
+    async with _locks.setdefault(connection_id, asyncio.Lock()):
+        task = _tasks.get(connection_id)
+        if task is not None and not task.done():
+            await asyncio.wait({task})
+        if await _already_current(connection_id, client_id, client_secret):
+            return
+        issued = await validate_credentials(client_id, client_secret)
+        error: PMSError | None = None
+        for attempt in (1, 2):  # the token is already counted: one more try to write it
+            try:
+                error = await _swap(connection_id, client_id, client_secret, issued)
+            except IntegrityError:
+                error = PMSAuthError("This API key or Guesty account is already connected.")
+            except SQLAlchemyError as failure:
+                logger.error(
+                    "replacement credentials could not be stored: %s",
+                    type(failure).__name__,
+                    extra={"connection_id": connection_id},
+                )
+                if attempt == 1:
+                    continue
+                raise PMSUpstreamError(
+                    "Guesty accepted the key but it could not be saved; one daily token was used."
+                ) from None
+            break
+        if error is not None:
+            raise error
+        forget_connection(connection_id)
+
+
+async def _already_current(connection_id: str, client_id: str, client_secret: str) -> bool:
+    """True when nothing needs replacing: same credentials stored and a usable token held."""
+    async with session() as db:
+        conn = await db.get(PMSConnection, connection_id)
+        if conn is None:
+            raise PMSAuthError("This connection is not available.")
+        if await client_id_in_use(db, client_id, except_connection_id=connection_id):
+            raise PMSAuthError("This API key is already used by another connection.")
+        row = await db.get(PMSToken, connection_id)
+    try:
+        stored = open_credentials(conn)
+    except (VaultError, ValueError):
+        return False
+    same = stored.get("client_id") == client_id and stored.get("client_secret") == client_secret
+    usable = (
+        row is not None
+        and conn.status in ("active", "token_budget_low")
+        and row.expires_at - _now() > timedelta(seconds=LOW_BUDGET_SAFETY_SECONDS)
+    )
+    return same and usable
+
+
+async def _swap(
+    connection_id: str, client_id: str, client_secret: str, issued: IssuedToken
+) -> PMSError | None:
+    async with write_transaction() as db:
+        conn = await db.get(PMSConnection, connection_id)
+        if conn is None:
+            raise PMSAuthError("This connection is not available.")
+        if await client_id_in_use(db, client_id, except_connection_id=connection_id):
+            return PMSAuthError("This API key is already used by another connection.")
+        error = await store_issued_token(db, conn, issued)
+        if error is not None:
+            return error
+        credentials = {"client_id": client_id, "client_secret": client_secret}
+        for column, value in sealed_credential_columns(connection_id, credentials).items():
+            setattr(conn, column, value)
+        if conn.status == "needs_attention":
+            conn.status = "active"
+            _record_budget(conn, None, issued.budget_remaining, issued.budget_reset_at)
+    return None
 
 
 class GuestyTokenManager:
@@ -449,20 +571,28 @@ class GuestyTokenManager:
         """One refresh at a time per connection; the caller's deadline bounds only its waiting."""
         cid = self.connection_id
         lock = _locks.setdefault(cid, asyncio.Lock())
+        limit = asyncio.timeout(remaining_seconds())
         try:
-            async with asyncio.timeout(remaining_seconds()), lock:
+            async with limit, lock:
                 task = _tasks.get(cid)
                 if task is None or task.done():
                     token, must_ask = await self._read_state(rejected)
                     if not must_ask:
                         return token
-                    task = asyncio.create_task(self._request_and_store())
+                    # An empty context: the caller's deadline must not apply inside the task.
+                    task = asyncio.create_task(
+                        self._request_and_store(), context=contextvars.Context()
+                    )
                     _tasks[cid] = task
                     task.add_done_callback(self._finished)
                 # Shielded: if this caller is cancelled or times out, the task still finishes and
                 # stores the token Guesty issued, and the next caller waits for it.
                 return await asyncio.shield(task)
         except TimeoutError:
+            if not limit.expired():
+                raise PMSUpstreamError(
+                    "The Guesty access token could not be renewed. Try again shortly."
+                ) from None
             raise PMSUpstreamError(
                 "The Guesty access token is still being renewed. Try again shortly."
             ) from None
@@ -480,10 +610,23 @@ class GuestyTokenManager:
         """
         async with session() as db:
             conn = await db.get(PMSConnection, self.connection_id)
-            row = await db.get(PMSToken, self.connection_id)
         _check_usable(conn)
+        pending = await self._store_unsaved()
+        async with session() as db:
+            row = await db.get(PMSToken, self.connection_id)
         now = _now()
         current = open_token(row) if row is not None else None
+        if pending is not None:
+            # Still not storable: use the token Guesty issued, as if it had been stored.
+            row = PMSToken(
+                connection_id=self.connection_id,
+                access_token=b"",
+                expires_at=pending.expires_at,
+                obtained_at=pending.obtained_at,
+                budget_remaining=pending.budget_remaining,
+                budget_reset_at=pending.budget_reset_at,
+            )
+            current = pending.access_token
         if row is not None and current is not None:
             if rejected is not None:
                 if current != rejected:
@@ -529,10 +672,33 @@ class GuestyTokenManager:
             await self._record_failure(exc)
             raise exc.error from None
         self._note_budget(issued.budget_remaining, issued.budget_reset_at, issued.obtained_at)
+        try:
+            await self._store(issued)
+        except SQLAlchemyError as failure:
+            # Guesty already counted this token. Keep it in memory and store it on the next call.
+            logger.error(
+                "a Guesty token could not be stored: %s",
+                type(failure).__name__,
+                extra={"connection_id": cid},
+            )
+            _unsaved[cid] = issued
+            self._start_cooldown(_now())
+            raise PMSUpstreamError(
+                "Guesty issued an access token but it could not be saved. It will be used and "
+                "saved on the next request. Try again shortly."
+            ) from None
+        return issued.access_token
+
+    async def _store(self, issued: IssuedToken) -> None:
+        """Store a token in a short write. Raises a `PMSError` for a refused token, and lets other
+        database errors through so the caller can keep the token."""
+        cid = self.connection_id
         error: PMSError | None = None
         try:
             async with write_transaction() as db:
                 conn = _check_usable(await db.get(PMSConnection, cid))
+                if not _issued_for_current_key(issued, conn):
+                    raise PMSUpstreamError(SUPERSEDED_TEXT)
                 error = await store_issued_token(db, conn, issued)
                 if error is not None:
                     conn.status, conn.updated_at = "needs_attention", _now()
@@ -543,7 +709,37 @@ class GuestyTokenManager:
             raise error
         _cooldown.pop(cid, None)
         self.account_id = issued.account_id
-        return issued.access_token
+
+    async def _store_unsaved(self) -> IssuedToken | None:
+        """Try again to store a token that could not be saved. Returns it while it still is not."""
+        cid = self.connection_id
+        pending = _unsaved.get(cid)
+        if pending is None:
+            return None
+        if pending.expires_at - _now() <= timedelta(seconds=LOW_BUDGET_SAFETY_SECONDS):
+            del _unsaved[cid]  # too close to its end to be worth keeping
+            return None
+        try:
+            await self._store(pending)
+        except SQLAlchemyError:
+            return pending
+        except PMSError as refused:
+            del _unsaved[cid]
+            if refused.message == SUPERSEDED_TEXT:
+                return None  # a token for the old key: dropped, the caller carries on
+            raise
+        del _unsaved[cid]
+        return None
+
+    def _start_cooldown(self, now: datetime) -> None:
+        """Pause token requests: 60 seconds, doubling after each failure up to 15 minutes."""
+        previous = _cooldown.get(self.connection_id)
+        delay = (
+            timedelta(seconds=COOLDOWN_START_SECONDS)
+            if previous is None
+            else min(previous[1] * 2, timedelta(seconds=COOLDOWN_MAX_SECONDS))
+        )
+        _cooldown[self.connection_id] = (now + delay, delay)
 
     def _note_budget(self, remaining: int | None, reset_at: datetime | None, now: datetime) -> None:
         """Remember in memory when the budget is empty, even if there is no token row to hold it."""
@@ -557,13 +753,7 @@ class GuestyTokenManager:
         cid = self.connection_id
         self._note_budget(exc.remaining, exc.reset_at, now)
         if not isinstance(exc.error, PMSTokenBudgetError):
-            previous = _cooldown.get(cid)
-            delay = (
-                timedelta(seconds=COOLDOWN_START_SECONDS)
-                if previous is None
-                else min(previous[1] * 2, timedelta(seconds=COOLDOWN_MAX_SECONDS))
-            )
-            _cooldown[cid] = (now + delay, delay)
+            self._start_cooldown(now)
         async with write_transaction() as db:
             conn = await db.get(PMSConnection, cid)
             if conn is None:

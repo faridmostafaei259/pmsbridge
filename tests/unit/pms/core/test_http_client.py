@@ -402,7 +402,21 @@ def test_base_urls_are_fixed_constants() -> None:
 
 
 @pytest.mark.parametrize(
-    ("value", "expected"), [("3", 3.0), ("0", 0.0), ("1.5", 1.5), (None, None), ("soon", None)]
+    ("value", "expected"),
+    [
+        ("3", 3.0),
+        ("0", 0.0),
+        ("1.5", 1.5),
+        (None, None),
+        ("soon", None),
+        ("inf", None),
+        ("-inf", None),
+        ("nan", None),
+        ("1e999", None),
+        ("99999999999", 3600.0),
+        ("3601", 3600.0),
+        ("3600", 3600.0),
+    ],
 )
 def test_retry_after_seconds(value: str | None, expected: float | None) -> None:
     assert parse_retry_after(value) == expected
@@ -410,7 +424,7 @@ def test_retry_after_seconds(value: str | None, expected: float | None) -> None:
 
 def test_retry_after_http_date() -> None:
     far = parse_retry_after("Wed, 21 Oct 2099 07:28:00 GMT")
-    assert far is not None and far > 1000
+    assert far == 3600.0  # capped at an hour
     assert parse_retry_after("Wed, 21 Oct 2015 07:28:00 GMT") == 0.0
 
 

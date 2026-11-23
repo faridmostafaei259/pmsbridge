@@ -45,14 +45,23 @@ All notable changes to this project are documented here. The format follows
 - A Guesty token manager that keeps one token per connection, renews it once and early without holding a database transaction, pauses after a failed token request, and tracks Guesty's 5-tokens-per-24-hours budget.
 - A provider registry and a Guesty provider shell that picks up the domain modules that exist.
 - Guesty provider guide.
+- Connections page in the dashboard: everyone signed in sees each Guesty connection's status, token budget and last successful call. Administrators can add, test, turn off and on, replace credentials, remove, and allow or stop changes.
+- Per-connection "Allow changes" switch (off by default) with a clear warning, and `connections` admin commands (list, add, rotate, test, disable, enable, allow-changes, stop-changes, remove). Secrets come from a hidden prompt or standard input, never from arguments.
+- The OAuth consent and Connected apps pages offer the working connections.
+- User guide for connecting Guesty.
 
 ### Changed
+- Replacing a connection's credentials keeps its id, so approved AI assistants keep working, and returns a connection that needed attention to working.
+- Changing which connections an assistant may use keeps connections that are turned off or need attention in its approval.
 - Request log lines from the HTTP libraries are no longer written at INFO, so query strings stay out of the logs.
 
 ### Fixed
 - Newly registered assistants never get a client id that starts with a minus sign, which the `--client` option of `oauth revoke-ai-access` could not accept; `--client=<id>` also works for older ids.
 
 ### Security
+- Adding a connection checks for an already-connected key before any Guesty token is requested, and adds run one at a time, so a double submit spends one token. Replacing credentials runs under the connection lock and does nothing when the credentials are unchanged.
+- A Guesty token requested with credentials that were replaced meanwhile, including from the command line, is never stored over the new key's token. A token that was issued but could not be saved is kept and saved before another is requested; a token request that does not finish within 30 seconds counts as failed.
+- The connections page shows only fixed notice texts, never text taken from the address.
 - Strict default Content-Security-Policy, `X-Frame-Options: DENY`, `nosniff` and `no-referrer` headers; error responses never include stack traces.
 - Forwarded headers are trusted only from Caddy's fixed address on a private network.
 - Caddy and the application run as unprivileged users with all capabilities dropped and read-only root filesystems. The internal `/readyz` endpoint is blocked at the public edge, request bodies are capped at 2 MB, and only Caddy publishes ports.

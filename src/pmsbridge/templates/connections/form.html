@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+{% block title %}{{ "Replace credentials" if replacing else "Add a Guesty connection" }} - pmsbridge{% endblock %}
+{% block content %}
+<section class="card">
+  <h1>{% if replacing %}Replace the credentials of {{ replacing.label }}{% else %}Add a Guesty connection{% endif %}</h1>
+  {% if error %}
+  <p class="error" role="alert">{{ error }}</p>
+  {% endif %}
+  {% if notice %}
+  <p class="notice" role="status">{{ notice }}</p>
+  {% endif %}
+  <p>In Guesty, create an API key just for pmsbridge. Do not reuse a key that other tools use: Guesty allows only 5 new access tokens per 24 hours for each key, and everything that shares the key shares that limit. Guesty shows the client secret only once, so copy it when you create the key.</p>
+  <p class="warning">Checking the credentials uses one of the key's 5 daily tokens. pmsbridge keeps that token, so it is not wasted. The secret is stored encrypted and is never shown again.</p>
+  <form method="post" action="{{ '/connections/rotate' if replacing else '/connections/add' }}" autocomplete="off">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    {% if replacing %}
+    <input type="hidden" name="connection_id" value="{{ replacing.id }}">
+    {% else %}
+    <label for="label">Name</label>
+    <input id="label" name="label" type="text" maxlength="60" value="{{ label }}" required>
+    {% endif %}
+    <label for="client_id">Client ID</label>
+    <input id="client_id" name="client_id" type="text" maxlength="256" value="{{ client_id }}" required>
+    <label for="client_secret">Client secret</label>
+    <input id="client_secret" name="client_secret" type="password" maxlength="256" autocomplete="new-password" required>
+    <button type="submit">{{ "Check and replace" if replacing else "Check and add" }}</button>
+  </form>
+  <p><a href="/connections">Cancel</a></p>
+</section>
+{% endblock %}

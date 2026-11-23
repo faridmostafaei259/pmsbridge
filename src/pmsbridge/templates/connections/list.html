@@ -1,0 +1,68 @@
+{% extends "base.html" %}
+{% block title %}Connections - pmsbridge{% endblock %}
+{% block content %}
+<section class="card wide">
+  <h1>Connections</h1>
+  <p>A connection links pmsbridge to your Guesty account. AI assistants can use only the connections you give them access to.</p>
+  {% if error %}
+  <p class="error" role="alert">{{ error }}</p>
+  {% endif %}
+  {% if notice %}
+  <p class="notice" role="status">{{ notice }}</p>
+  {% endif %}
+  {% if truncated %}
+  <p class="notice" role="status">Showing the first {{ max_listed }} connections only.</p>
+  {% endif %}
+  {% if is_admin %}
+  <p><a class="button" href="/connections/add">Add a Guesty connection</a></p>
+  {% endif %}
+  {% if rows %}
+  <table>
+    <thead>
+      <tr><th>Name</th><th>System</th><th>Status</th><th>Changes</th><th>Tokens left today</th><th>Last successful call</th>{% if is_admin %}<th>Actions</th>{% endif %}</tr>
+    </thead>
+    <tbody>
+      {% for row in rows %}
+      <tr>
+        <td>{{ row.label }}<br><span class="muted">key ending {{ row.hint }}</span></td>
+        <td>{{ row.provider | capitalize }}</td>
+        <td>{{ status_text[row.status] }}</td>
+        <td>{{ "Allowed" if row.writes_enabled else "Off (read only)" }}</td>
+        <td>{% if row.provider == "guesty" and row.budget_remaining is not none %}{{ row.budget_remaining }} of 5{% if row.budget_reset_at %}<br><span class="muted">next at {{ row.budget_reset_at.strftime("%Y-%m-%d %H:%M UTC") }}</span>{% endif %}{% elif row.provider == "guesty" %}not known{% else %}-{% endif %}</td>
+        <td>{{ row.last_success_at.strftime("%Y-%m-%d %H:%M UTC") if row.last_success_at else "never" }}</td>
+        {% if is_admin %}
+        <td>
+          <form method="post" action="/connections/test">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <input type="hidden" name="connection_id" value="{{ row.id }}">
+            <button type="submit">Test</button>
+          </form>
+          {% if row.status != 'needs_attention' %}
+          <form method="post" action="/connections/{{ 'enable' if row.status == 'disabled' else 'disable' }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <input type="hidden" name="connection_id" value="{{ row.id }}">
+            <button type="submit">{{ "Turn on" if row.status == "disabled" else "Turn off" }}</button>
+          </form>
+          {% endif %}
+          {% if row.writes_enabled %}
+          <form method="post" action="/connections/stop-changes">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <input type="hidden" name="connection_id" value="{{ row.id }}">
+            <button type="submit">Stop changes</button>
+          </form>
+          {% else %}
+          <a href="/connections/allow-changes?connection={{ row.id }}">Allow changes</a>
+          {% endif %}
+          <a href="/connections/rotate?connection={{ row.id }}">Replace credentials</a>
+          <a href="/connections/remove?connection={{ row.id }}">Remove</a>
+        </td>
+        {% endif %}
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p>There are no connections yet.{% if is_admin %} Add your Guesty account to get started.{% else %} Ask an administrator to add one.{% endif %}</p>
+  {% endif %}
+</section>
+{% endblock %}

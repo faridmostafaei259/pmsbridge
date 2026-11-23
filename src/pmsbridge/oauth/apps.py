@@ -141,7 +141,13 @@ def coverage(approval: Approval, labels: Mapping[str, str] | None) -> str:
 
 
 async def set_connections(user_id: int, client_id: str, selection: grants.Selection) -> int:
-    """Change the connections of a person's live approvals for one assistant; returns how many."""
+    """Change the connections of a person's live approvals for one assistant; returns how many.
+
+    Ids the person is not offered right now (a paused connection, or one that needs attention) are
+    kept in the approval, so turning the connection on again does not lose the choice. A removed
+    connection is taken out of every approval when it is removed.
+    """
+    offered = {choice.id for choice in await consent.choices_for(user_id)}
     async with write_transaction() as db:
         found = (
             await db.execute(
@@ -155,7 +161,14 @@ async def set_connections(user_id: int, client_id: str, selection: grants.Select
         changed = list(found)
         for grant in changed:
             grant.all_connections = selection.all_connections
-            grant.allowed_connection_ids = list(selection.connection_ids)
+            kept = (
+                []
+                if selection.all_connections
+                else [
+                    str(item) for item in grant.allowed_connection_ids if str(item) not in offered
+                ]
+            )
+            grant.allowed_connection_ids = list(dict.fromkeys([*selection.connection_ids, *kept]))
         return len(changed)
 
 

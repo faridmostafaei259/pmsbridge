@@ -12,6 +12,7 @@
     <a class="brand" href="/">pmsbridge</a>
     {% if user %}
     <nav>
+      <a href="/connections">Connections</a>
       <a href="/account/apps">Connected apps</a>
       {% if user.role == "admin" %}
       <a href="/admin/users">Users</a>

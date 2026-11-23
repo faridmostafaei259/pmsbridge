@@ -61,6 +61,7 @@ BACKOFF_CAP: Final = 15.0
 MAX_WAIT_WITHOUT_DEADLINE: Final = 30.0
 WRITE_RATE_LIMIT_RETRIES: Final = 2
 MAX_RESPONSE_BYTES: Final = 8 * 1024 * 1024
+MAX_RETRY_AFTER_SECONDS: Final = 3600.0
 BREAKER_THRESHOLD: Final = 5
 BREAKER_OPEN_SECONDS: Final = 30.0
 DEL: Final = 0x7F
@@ -272,21 +273,27 @@ def _has_dot_segment(path: str) -> bool:
 
 
 def parse_retry_after(value: str | None) -> float | None:
-    """Seconds from a `Retry-After` header (a number of seconds or an HTTP date), else None."""
+    """Seconds from a `Retry-After` header (a number of seconds or an HTTP date), else None.
+
+    Values that are not finite numbers are ignored, and anything longer than an hour counts as an
+    hour, so a hostile or broken header cannot park a connection for long.
+    """
     if value is None:
         return None
     text = value.strip()
     try:
-        return max(0.0, float(text))
+        seconds = float(text)
     except ValueError:
-        pass
+        seconds = None
+    if seconds is not None:
+        return min(MAX_RETRY_AFTER_SECONDS, max(0.0, seconds)) if math.isfinite(seconds) else None
     try:
         when = parsedate_to_datetime(text)
     except (TypeError, ValueError):
         return None
     if when.tzinfo is None:
         when = when.replace(tzinfo=UTC)
-    return max(0.0, (when - datetime.now(UTC)).total_seconds())
+    return min(MAX_RETRY_AFTER_SECONDS, max(0.0, (when - datetime.now(UTC)).total_seconds()))
 
 
 _FIXED_ERRORS: Final[Mapping[int, tuple[type[PMSError], str]]] = {

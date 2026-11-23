@@ -1,0 +1,14 @@
+{% extends "base.html" %}
+{% block title %}{{ "Allow changes" if action == "allow-changes" else "Remove connection" }} - pmsbridge{% endblock %}
+{% block content %}
+<section class="card narrow">
+  <h1>{% if action == "allow-changes" %}Allow changes on {{ target.label }}{% else %}Remove {{ target.label }}{% endif %}</h1>
+  <p class="warning">{{ warning }}</p>
+  <form method="post" action="/connections/{{ action }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input type="hidden" name="connection_id" value="{{ target.id }}">
+    <button type="submit">{{ "I understand, allow changes" if action == "allow-changes" else "Remove the connection" }}</button>
+  </form>
+  <p><a href="/connections">Cancel</a></p>
+</section>
+{% endblock %}
