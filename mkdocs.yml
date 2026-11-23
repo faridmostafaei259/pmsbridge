@@ -19,6 +19,7 @@ nav:
           - Calendar and prices: providers/guesty/calendar.md
           - Guests: providers/guesty/guests.md
           - Inbox and messages: providers/guesty/inbox.md
+          - Reviews: providers/guesty/reviews.md
   - Configuration: configuration.md
   - Architecture: architecture.md
   - Security model: security/threat-model.md

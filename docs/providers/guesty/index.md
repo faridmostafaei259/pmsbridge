@@ -90,6 +90,7 @@ Each feature has its own page with the Guesty endpoints it calls and how their d
 - [Calendar and prices](calendar.md)
 - [Guests](guests.md)
 - [Inbox and messages](inbox.md)
+- [Reviews](reviews.md)
 
 pmsbridge itself also calls these, for every feature:
 

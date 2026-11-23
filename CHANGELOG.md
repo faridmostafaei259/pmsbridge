@@ -61,6 +61,7 @@ All notable changes to this project are documented here. The format follows
 - Guesty guest tools: `list_guests` and `get_guest` read a guest's name, email, phone and language. Identity documents, birthdays, addresses, staff notes and payment methods are never read. Guesty cannot search guests by text, so a search gets a clear message and sends nothing to Guesty.
 - Guesty inbox tools: list conversations (filter by reservation, listing or unread), read a conversation's messages, and send a message to a guest (off until an administrator allows changes; the message goes out once and is never repeated automatically).
 - A tool to add an internal note to a conversation. Guesty documents no way to do this without risking the guest seeing it, so it is refused with a clear message for now.
+- Guesty reviews: `list_reviews` lists guest reviews (rating with its scale, public text, existing reply, channel, dates) and `reply_to_review` posts one public reply. Replying needs the connection's change switch, is sent once and never repeated, and is refused when the review already has a reply.
 
 ### Changed
 - A connection name that matches several allowed connections only by upper or lower case gets a clear message listing them.

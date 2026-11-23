@@ -1,0 +1,12 @@
+{
+  "_id": "6a7000000000000000000r01",
+  "listingId": "6a1000000000000000000a01",
+  "reservationId": "6a2000000000000000000b01",
+  "channelId": "custom",
+  "createdAt": "2026-02-01T10:00:00.000Z",
+  "updatedAt": "2026-02-04T10:00:00.000Z",
+  "contents": {"body": "Lovely stay, thank you.", "rating": 9},
+  "reviewReplies": [
+    {"status": "PENDING", "reviewReply": "Thank you, we hope to host you again.", "replyAt": "2026-02-04T10:00:00.000Z"}
+  ]
+}
