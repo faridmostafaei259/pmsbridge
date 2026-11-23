@@ -7,8 +7,9 @@ reach it, where the trust boundaries are, and which controls exist. Every contro
 Status: foundation milestone (container image, Docker Compose stack with Caddy, settings, logging,
 SQLite storage and migrations, encryption vault, key rotation commands) plus the accounts and OAuth
 milestone (dashboard sign-in, two-factor, invitations, user management, the OAuth authorization server
-with the token endpoint, connected-apps pages and the assistant web-address fetch). There are no PMS
-connections or MCP tools yet, so the controls for those are marked Planned.
+with the token endpoint, connected-apps pages and the assistant web-address fetch). PMS connections
+and the MCP endpoint with its tool framework are built; controls that depend on the PMS data tools are
+marked Planned.
 
 ## Assets
 
@@ -34,8 +35,9 @@ connections or MCP tools yet, so the controls for those are marked Planned.
   sign-in and the link pages), the OAuth endpoints (`/.well-known/oauth-*` discovery documents,
   `/oauth/register`, `/oauth/authorize`, `/oauth/token`, `/oauth/revoke`; the registration, token and
   revocation endpoints are reachable by anyone and are rate limited) and 404 for everything else.
-  `/readyz` is answered with 404 by Caddy and never reaches the application. The MCP endpoint does not
-  exist yet.
+  `/readyz` is answered with 404 by Caddy and never reaches the application. The MCP endpoint `/mcp`
+  accepts only POST requests with a bearer access token (no cookies, so no CSRF; no CORS headers) and
+  refuses everything else.
 - **The private backend network** shared by Caddy and the app. Nothing else is attached to it. The app
   listens on port 8000 on this network. That port is not published on the server's network cards, but on
   a Linux server the Docker host itself can reach the app's bridge address directly, so anyone with a shell
@@ -52,7 +54,7 @@ connections or MCP tools yet, so the controls for those are marked Planned.
 ```
 Internet --(TLS 1.2+)--> Caddy --(private network)--> app --> /data volume
                                                        |
-                                                       +--> PMS APIs (outbound HTTPS, fixed hosts; not used yet)
+                                                       +--> PMS APIs (outbound HTTPS, fixed hosts)
                                                        +--> assistant metadata hosts (outbound HTTPS 443, guarded, after sign-in)
 Operator / Docker host  ------------------------------> everything above (full trust)
 ```
@@ -64,7 +66,7 @@ Operator / Docker host  ------------------------------> everything above (full t
   containers and the host's gateway address, is treated as an ordinary visitor.
 - **App to its volume.** The app is the only writer of `/data`. It runs as an unprivileged user on a
   read-only root filesystem.
-- **App to PMS APIs.** Planned: outbound HTTPS to fixed, hard-coded hosts.
+- **App to PMS APIs.** Implemented: outbound HTTPS to fixed, hard-coded hosts, with timeouts, request path checks, a circuit breaker and per-account rate limits.
 - **App to assistant metadata hosts.** Implemented: outbound HTTPS on port 443 to the public host named in an assistant's
   web-address identity, only after a person signs in, under the server-side request forgery guard.
 - **Operator's server to the release channel.** Planned: checksums and image digests.
@@ -126,8 +128,9 @@ Operator / Docker host  ------------------------------> everything above (full t
 | Tampered dependency or base image | Digests and hashes; vulnerability scanning in CI; pinned CI actions | Implemented |
 | Tampered update | Digest-pinned images and checksum verification before applying updates | Planned |
 | Stolen or replayed OAuth tokens | Access tokens last one hour, are bound to the MCP address and can be revoked at once by the person or an administrator; refresh tokens rotate on every use, are bound to the client and end 30 days after last use or 90 days after the approval; reusing a retired refresh token revokes the whole approval; tokens stop working the moment the person is disabled or reset. A runaway or abusive refresh loop is capped at 10 successful refreshes per approval per minute, and an administrator's refresh token stops working, and the approval is cancelled, if the administrator's two-factor sign-in has been removed | Implemented |
-| An AI client using a PMS connection it was not granted | Allowed connections recorded at consent and checked on every tool call | Planned |
-| Unwanted changes to PMS data | Write actions off by default, enabled per connection by an admin, audited | Planned |
+| An AI client using a PMS connection it was not granted | Allowed connections recorded at consent and checked on every tool call; a connection that was not granted gets the same answer as one that does not exist, and no other connection's name or id appears in a tool answer | Implemented |
+| Personal data or secrets in the audit log | Tool calls are recorded with person, assistant, connection, tool, outcome and duration only, never arguments, results or tokens; entries are deleted after `AUDIT_RETENTION_DAYS` | Implemented |
+| Unwanted changes to PMS data | Write actions off by default, enabled per connection by an admin, audited | Implemented in the tool framework; applies to each write tool as it is added |
 | Exhausting the Guesty token budget (5 per 24 hours) | One refresh at a time per connection, a persistent encrypted token cache reused until shortly before expiry, budget tracking from Guesty's response headers, a pause that grows after each failed token request, no token requests for connections that need attention, and a block until the reset time when the budget is used up; only one module may request tokens (enforced by a test) | Implemented |
 | A token issued for another client id or Guesty account | Refused; a security event is logged and the connection is marked as needing attention | Implemented |
 | The same Guesty account or the same API key connected twice | Refused by uniqueness checks and database constraints; a repeated key is refused before any token is requested | Implemented |
@@ -137,7 +140,7 @@ Operator / Docker host  ------------------------------> everything above (full t
 | Prompt injection through PMS content (a guest message, review or note tells the AI to send messages or change prices) | Write actions off by default and enabled per connection; write tools marked destructive so AI clients ask for confirmation; bounded calendar updates; every write audited | Planned |
 | Malicious client registration or consent phishing (lookalike app names, attacker redirect URIs, flooding the registration endpoint) | Consent screen shows the client name (escaped, marked unverified) and the redirect host, with a warning for loopback addresses; exact redirect URI matching; registration rate limits; unused registrations expire. A lookalike name with the attacker's own return address cannot be stopped technically: the person sees the host and decides (see accepted risks) | Implemented |
 | Tampered pagination cursors | Cursors are opaque, never contain URLs or hosts, are parsed strictly and rejected when malformed | Planned |
-| Duplicate actions after timeouts (message sent twice) | Write operations are never retried automatically; unknown outcomes are reported to the client | Planned |
+| Duplicate actions after timeouts (message sent twice) | Write operations are never retried automatically (the only exception is a "too many requests" answer with a wait time, which means the PMS did not process it); unknown outcomes are reported to the client | Implemented in the HTTP client and tool framework |
 | Compression side channels (BREACH) once the dashboard shows secrets next to reflected input | Caddy does not compress responses at all, and CSRF tokens are also masked with a fresh random value per response | Implemented |
 
 ## Accepted risks and known gaps
@@ -148,6 +151,7 @@ gap is fixed.
 
 | Item | Impact | Status |
 |---|---|---|
+| No request rate limit on `/mcp` for signed-in assistants | A stolen access token or a misbehaving assistant can make many calls that never reach the PMS (for example `list_connections` or refused calls) and grow the tool-call record until the token expires (one hour). Calls that reach the PMS are already limited per PMS account. Outsiders without a token are refused after one database read, with no write | Known gap: a per-approval limit is added before the first tool that changes data |
 | Log redaction is a safety net, not a guarantee. Known limitations: an unquoted value containing spaces is masked only up to the first space; short names glued to other words (`mysid`, `newcode`) are not recognised; double-encoded or percent-encoded names and e-mail addresses are not matched; JWTs not starting with `eyJ` are matched only under a sensitive name; an escaped secret containing a lookalike closing sequence can be closed early; only the last two words of a multi-word name decide sensitivity; names outside the lists (for example `pin`, `nonce`, `state`) are never masked; output is cut at 8,000 characters before masking; anything written outside Python logging (for example server output before logging starts) is not covered; Caddy's own log is handled separately by its log filter | A secret could reach the logs if code logs it in one of these shapes | Accepted: code must never log secrets; redaction is the second line of defence, covered by regression tests |
 | The app port is reachable from the Docker host and from any container on the backend network. Traffic sent that way skips Caddy, so it skips the hidden `/readyz` (it answers with the check names), TLS and the `Host` routing. Forwarded headers on such traffic are ignored | Someone with a shell on the server (already root-equivalent through Docker) can read `/readyz` (check names only). A compromised container on the backend network could do the same; only the two project containers are attached | Accepted; the application enforces its own 2 MiB body limit and ignores forwarded headers from such traffic |
 | Sign-in rate limits live in memory | A restart clears the counters, and anyone who knows an e-mail address can lock that account out of password sign-in for 5 minutes by failing on purpose | Accepted: limits are short, documented in the admin guide, and two-factor sign-in (required for administrators) adds a second factor |

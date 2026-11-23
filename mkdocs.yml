@@ -8,6 +8,8 @@ nav:
   - Home: index.md
   - TLS and domains: tls-and-domains.md
   - User guide: user-guide.md
+  - Connect an AI assistant: connect-ai-clients.md
+  - Tools: tools.md
   - Admin guide: admin-guide.md
   - Providers:
       - Guesty: providers/guesty/index.md

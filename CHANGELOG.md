@@ -49,6 +49,10 @@ All notable changes to this project are documented here. The format follows
 - Per-connection "Allow changes" switch (off by default) with a clear warning, and `connections` admin commands (list, add, rotate, test, disable, enable, allow-changes, stop-changes, remove). Secrets come from a hidden prompt or standard input, never from arguments.
 - The OAuth consent and Connected apps pages offer the working connections.
 - User guide for connecting Guesty.
+- MCP endpoint at `/mcp` for AI assistants. It accepts only OAuth access tokens and checks them on every request, so revoking access or disabling a person takes effect at once.
+- `list_connections` tool and the framework every tool uses: per-call checks against the person's approval, connections that are turned off or need attention are refused, tools that change data stay off until an administrator allows changes on the connection, a 25-second limit per call, safe error messages, bounded results and read-only or changes-data markers for AI assistants.
+- A record of every AI assistant tool call (person, assistant, connection, tool, outcome, time taken; never request details, personal data or tokens), deleted after `AUDIT_RETENTION_DAYS` (90 by default). New database migration.
+- Generated tool reference and a guide for connecting an AI assistant.
 
 ### Changed
 - Replacing a connection's credentials keeps its id, so approved AI assistants keep working, and returns a connection that needed attention to working.
@@ -59,6 +63,7 @@ All notable changes to this project are documented here. The format follows
 - Newly registered assistants never get a client id that starts with a minus sign, which the `--client` option of `oauth revoke-ai-access` could not accept; `--client=<id>` also works for older ids.
 
 ### Security
+- An AI assistant asking for a connection it was not approved for gets the same answer as for one that does not exist, and no other connection's name or id appears in a tool answer.
 - Adding a connection checks for an already-connected key before any Guesty token is requested, and adds run one at a time, so a double submit spends one token. Replacing credentials runs under the connection lock and does nothing when the credentials are unchanged.
 - A Guesty token requested with credentials that were replaced meanwhile, including from the command line, is never stored over the new key's token. A token that was issued but could not be saved is kept and saved before another is requested; a token request that does not finish within 30 seconds counts as failed.
 - The connections page shows only fixed notice texts, never text taken from the address.
