@@ -44,10 +44,13 @@ from pmsbridge.pms.models import (
     CalendarRange,
     CalendarUpdateRequest,
     Conversation,
+    ConversationNote,
     ConversationQuery,
     Guest,
     GuestQuery,
     Listing,
+    ListingDetails,
+    ListingPhoto,
     ListingQuery,
     Message,
     NewTask,
@@ -56,6 +59,10 @@ from pmsbridge.pms.models import (
     Page,
     PageRequest,
     Payment,
+    PhotoCaptionUpdate,
+    PhotoDelete,
+    PhotoOrder,
+    PricingSettings,
     Reservation,
     ReservationNote,
     ReservationQuery,
@@ -87,6 +94,11 @@ class Capability(StrEnum):
     PAYMENTS_READ = "payments.read"
     TASKS_READ = "tasks.read"
     TASKS_CREATE = "tasks.create"
+    LISTING_DETAILS_READ = "listings.details.read"
+    PHOTOS_READ = "photos.read"
+    PHOTOS_WRITE = "photos.write"
+    PRICING_READ = "pricing.read"
+    INBOX_NOTE = "inbox.note"
 
 
 WRITE_CAPABILITIES: frozenset[Capability] = frozenset(
@@ -96,6 +108,8 @@ WRITE_CAPABILITIES: frozenset[Capability] = frozenset(
         Capability.INBOX_SEND,
         Capability.REVIEWS_REPLY,
         Capability.TASKS_CREATE,
+        Capability.PHOTOS_WRITE,
+        Capability.INBOX_NOTE,
     }
 )
 
@@ -209,6 +223,22 @@ class InboxAPI(Protocol):
         """
         ...
 
+    async def add_conversation_note(self, note: ConversationNote) -> Message:
+        """Add an internal note to the conversation. It is never sent to the guest."""
+        ...
+
+
+class ListingContentAPI(Protocol):
+    async def get_listing_details(self, listing_id: str) -> ListingDetails: ...
+    async def list_listing_photos(self, listing_id: str) -> list[ListingPhoto]: ...
+    async def update_photo_caption(self, update: PhotoCaptionUpdate) -> ListingPhoto: ...
+    async def reorder_photos(self, order: PhotoOrder) -> list[ListingPhoto]: ...
+    async def delete_photo(self, photo: PhotoDelete) -> None: ...
+
+
+class PricingAPI(Protocol):
+    async def get_pricing_settings(self, listing_id: str) -> PricingSettings: ...
+
 
 class ReviewsAPI(Protocol):
     async def list_reviews(self, query: ReviewQuery) -> Page[Review]: ...
@@ -244,6 +274,12 @@ class PMSProvider(Protocol):
 
     @property
     def listings(self) -> ListingsAPI | None: ...
+
+    @property
+    def content(self) -> ListingContentAPI | None: ...
+
+    @property
+    def pricing(self) -> PricingAPI | None: ...
 
     @property
     def reservations(self) -> ReservationsAPI | None: ...
@@ -297,6 +333,7 @@ __all__ = [
     "ConnectionRef",
     "GuestsAPI",
     "InboxAPI",
+    "ListingContentAPI",
     "ListingsAPI",
     "OwnersAPI",
     "PMSAuthError",
@@ -309,6 +346,7 @@ __all__ = [
     "PMSUpstreamError",
     "PMSValidationError",
     "PaymentsAPI",
+    "PricingAPI",
     "Provider",
     "ReservationsAPI",
     "ReviewsAPI",

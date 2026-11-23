@@ -11,12 +11,14 @@ from pmsbridge.pms.base import (
     ConnectionRef,
     GuestsAPI,
     InboxAPI,
+    ListingContentAPI,
     ListingsAPI,
     OwnersAPI,
     PaymentsAPI,
     PMSNotFoundError,
     PMSProvider,
     PMSValidationError,
+    PricingAPI,
     Provider,
     ReservationsAPI,
     ReviewsAPI,
@@ -78,6 +80,14 @@ class FakeProvider:
     @property
     def listings(self) -> ListingsAPI | None:
         return self._listings
+
+    @property
+    def content(self) -> ListingContentAPI | None:
+        return None
+
+    @property
+    def pricing(self) -> PricingAPI | None:
+        return None
 
     @property
     def reservations(self) -> ReservationsAPI | None:

@@ -50,6 +50,8 @@ MAX_PRICE_DECIMALS = 2
 MAX_SHORT_TEXT = 500
 MAX_TEXT_LENGTH = 5000
 MAX_EXTRAS_KEYS = 50
+MAX_PHOTOS = 200
+MAX_CHECKLIST_ITEMS = 50
 TRUNCATION_MARKER = " [truncated]"
 UNKNOWN_NAME = "Unknown"
 
@@ -163,6 +165,119 @@ class Listing(CanonicalModel):
 class ListingQuery(PageRequest):
     active_only: bool | None = None
     search: Text | None = None
+
+
+# --------------------------------------------------------------------------- listing content
+
+
+class DescriptionKind(StrEnum):
+    SUMMARY = "summary"
+    SPACE = "space"
+    ACCESS = "access"
+    NEIGHBORHOOD = "neighborhood"
+    TRANSIT = "transit"
+    INTERACTION = "interaction"
+    NOTES = "notes"
+    HOUSE_RULES = "house_rules"
+    OTHER = "other"
+
+
+class ListingDescription(CanonicalModel):
+    kind: DescriptionKind = DescriptionKind.OTHER
+    text: LongText
+    language: Text | None = None
+
+
+class HouseRules(CanonicalModel):
+    pets_allowed: bool | None = None
+    smoking_allowed: bool | None = None
+    events_allowed: bool | None = None
+    children_allowed: bool | None = None
+    infants_allowed: bool | None = None
+    minimum_age: int | None = Field(default=None, ge=0, le=120)
+    quiet_hours_start: Text | None = None
+    quiet_hours_end: Text | None = None
+    additional_rules: LongText | None = None
+
+
+class Bed(CanonicalModel):
+    bed_type: Text
+    count: int = Field(default=1, ge=1, le=50)
+
+
+class Room(CanonicalModel):
+    name: Text
+    room_type: Text | None = None
+    beds: list[Bed] = Field(default_factory=list[Bed])
+
+
+class ListingDetails(CanonicalModel):
+    """Full listing content beyond the summary in ``Listing``."""
+
+    listing_id: Identifier
+    descriptions: list[ListingDescription] = Field(default_factory=list[ListingDescription])
+    amenities: list[Text] = Field(default_factory=list[Text])
+    amenities_not_included: list[Text] = Field(default_factory=list[Text])
+    house_rules: HouseRules | None = None
+    rooms: list[Room] = Field(default_factory=list[Room])
+    check_in_instructions: LongText | None = None
+    custom_fields: Extras = Field(default_factory=_no_extras)
+
+
+class ListingPhoto(CanonicalModel):
+    id: Identifier
+    url: LongText
+    thumbnail_url: LongText | None = None
+    caption: Text | None = None
+    position: int = Field(default=0, ge=0)
+    room_name: Text | None = None
+    width: int | None = Field(default=None, ge=0)
+    height: int | None = Field(default=None, ge=0)
+
+
+class PhotoCaptionUpdate(CanonicalModel):
+    listing_id: Identifier
+    photo_id: Identifier
+    caption: Annotated[str, StringConstraints(max_length=500)]
+
+
+class PhotoOrder(CanonicalModel):
+    """The complete new order of a listing's photos (every photo id exactly once)."""
+
+    listing_id: Identifier
+    photo_ids: list[Identifier] = Field(min_length=1, max_length=MAX_PHOTOS)
+
+    @model_validator(mode="after")
+    def _unique(self) -> PhotoOrder:
+        if len(set(self.photo_ids)) != len(self.photo_ids):
+            raise ValueError("each photo id may appear only once")
+        return self
+
+
+class PhotoDelete(CanonicalModel):
+    listing_id: Identifier
+    photo_id: Identifier
+
+
+# --------------------------------------------------------------------------- pricing
+
+
+class PricingSettings(CanonicalModel):
+    """A listing's standing price settings (day-by-day prices are in the calendar)."""
+
+    listing_id: Identifier
+    currency: CurrencyCode
+    base_price: Money | None = None
+    weekend_base_price: Money | None = None
+    cleaning_fee: Money | None = None
+    extra_guest_fee: Money | None = None
+    guests_included: int | None = Field(default=None, ge=0)
+    security_deposit: Money | None = None
+    weekly_discount_percent: float | None = Field(default=None, ge=0, le=100)
+    monthly_discount_percent: float | None = Field(default=None, ge=0, le=100)
+    min_nights: int | None = Field(default=None, ge=0)
+    max_nights: int | None = Field(default=None, ge=0)
+    extras: Extras = Field(default_factory=_no_extras)
 
 
 # --------------------------------------------------------------------------- guests
@@ -380,6 +495,13 @@ class Message(CanonicalModel):
     author_name: Text | None = None
 
 
+class ConversationNote(CanonicalModel):
+    """An internal note on a conversation. It is never sent to the guest."""
+
+    conversation_id: Identifier
+    body: InputText
+
+
 class OutgoingMessage(CanonicalModel):
     conversation_id: Identifier
     body: InputText
@@ -460,9 +582,26 @@ class TaskStatus(StrEnum):
     UNKNOWN = "unknown"
 
 
+class TaskType(StrEnum):
+    CLEANING = "cleaning"
+    MAINTENANCE = "maintenance"
+    INSPECTION = "inspection"
+    CHECK_IN = "check_in"
+    CHECK_OUT = "check_out"
+    OTHER = "other"
+    UNKNOWN = "unknown"
+
+
+class ChecklistItem(CanonicalModel):
+    text: Text
+    done: bool = False
+
+
 class Task(CanonicalModel):
     id: Identifier
     title: Text
+    task_type: TaskType = TaskType.UNKNOWN
+    checklist: list[ChecklistItem] = Field(default_factory=list[ChecklistItem])
     description: LongText | None = None
     listing_id: Identifier | None = None
     reservation_id: Identifier | None = None
@@ -475,6 +614,7 @@ class Task(CanonicalModel):
 class TaskQuery(PageRequest):
     listing_id: Identifier | None = None
     status: TaskStatus | None = None
+    task_type: TaskType | None = None
     due_from: date | None = None
     due_to: date | None = None
 
@@ -488,6 +628,8 @@ class TaskQuery(PageRequest):
 class NewTask(CanonicalModel):
     title: InputTitle
     description: InputText | None = None
+    task_type: TaskType = TaskType.OTHER
+    checklist: list[InputTitle] = Field(default_factory=list[str], max_length=MAX_CHECKLIST_ITEMS)
     listing_id: Identifier | None = None
     reservation_id: Identifier | None = None
     due_at: AwareDatetime | None = None
@@ -497,25 +639,35 @@ __all__ = [
     "DEFAULT_PAGE_SIZE",
     "MAX_CALENDAR_RANGE_DAYS",
     "MAX_CALENDAR_UPDATES",
+    "MAX_CHECKLIST_ITEMS",
     "MAX_EXTRAS_KEYS",
     "MAX_PAGE_SIZE",
+    "MAX_PHOTOS",
     "MAX_PRICE_DECIMALS",
     "MAX_SHORT_TEXT",
     "MAX_TEXT_LENGTH",
     "TRUNCATION_MARKER",
     "UNKNOWN_NAME",
     "Address",
+    "Bed",
     "CalendarDay",
     "CalendarRange",
     "CalendarUpdate",
     "CalendarUpdateRequest",
     "CanonicalModel",
+    "ChecklistItem",
     "Conversation",
+    "ConversationNote",
     "ConversationQuery",
+    "DescriptionKind",
     "Guest",
     "GuestQuery",
     "GuestSummary",
+    "HouseRules",
     "Listing",
+    "ListingDescription",
+    "ListingDetails",
+    "ListingPhoto",
     "ListingQuery",
     "ListingStatus",
     "Message",
@@ -529,6 +681,10 @@ __all__ = [
     "PageRequest",
     "Payment",
     "PaymentStatus",
+    "PhotoCaptionUpdate",
+    "PhotoDelete",
+    "PhotoOrder",
+    "PricingSettings",
     "Reservation",
     "ReservationNote",
     "ReservationQuery",
@@ -536,7 +692,9 @@ __all__ = [
     "Review",
     "ReviewQuery",
     "ReviewReply",
+    "Room",
     "Task",
     "TaskQuery",
     "TaskStatus",
+    "TaskType",
 ]
