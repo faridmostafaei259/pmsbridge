@@ -751,3 +751,29 @@ async def test_an_airbnb_balance_is_a_pending_payout_not_a_balance_due(
     assert reservation.channel == "airbnb2"
     assert reservation.balance_due is None
     assert reservation.extras["payout_pending_from_channel"] == 125.5
+
+
+def test_a_by_ids_result_gives_the_gross_breakdown_that_adds_up_to_the_payout() -> None:
+    found = reservations.map_reservation(
+        by_ids_item(
+            {
+                "currency": "AED",
+                "fareAccommodation": 1100,
+                "fareAccommodationAdjusted": 880,
+                "fareCleaning": 260,
+                "totalFees": 260,
+                "totalTaxes": 0,
+                "hostServiceFee": 176.7,
+                "hostPayout": 963.3,
+            }
+        )
+    )
+    assert found is not None
+    extras = found.extras
+    gross = (
+        float(extras["accommodation_fare"])  # type: ignore[arg-type]
+        + float(extras["fees_total"])  # type: ignore[arg-type]
+        + float(extras["taxes_total"])  # type: ignore[arg-type]
+    )
+    assert gross == 1140
+    assert round(gross - float(extras["channel_host_fee"]), 2) == extras["host_payout"]  # type: ignore[arg-type]

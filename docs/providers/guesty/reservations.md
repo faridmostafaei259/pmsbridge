@@ -159,6 +159,11 @@ notes: pmsbridge drops Guesty's key-code field, but a code typed into a normal n
   bookings such as Airbnb usually do not. `get_reservation` also shows the host payout
   (`money.hostPayout`), the amount paid (`money.totalPaid`) and the currency as extra values, and the
   balance due. Payments and payment methods are never shown.
+- **Gross amounts**: Airbnb never tells the host what the guest paid in total (its guest service fee is
+  hidden from hosts). For revenue and owner statements, `get_reservation` gives the booking's gross
+  breakdown as extra values: `accommodation_fare` (after discounts), `fees_total` (including cleaning),
+  `taxes_total` and `channel_host_fee`. The fare, fees and taxes added up, minus the channel's host fee,
+  equal `host_payout`.
 - **Balance on Airbnb bookings**: Airbnb takes the guest's payment, so the balance Guesty reports is the
   payout Airbnb has not sent yet, not money the guest owes. For Airbnb bookings it is shown as the extra
   value `payout_pending_from_channel` and the balance due is left empty.

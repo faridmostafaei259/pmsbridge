@@ -189,6 +189,12 @@ def _extras(item: dict[str, object], status: str | None) -> dict[str, ExtraValue
         "currency": (text_of(money.get("currency")) or "").upper() or None,
         "host_payout": number_of(money.get("hostPayout")),
         "total_paid": number_of(money.get("totalPaid")),
+        # The gross breakdown, for revenue and owner statements. Seen live on an Airbnb booking:
+        # accommodation_fare + fees_total + taxes_total - channel_host_fee = host_payout.
+        "accommodation_fare": number_of(money.get("fareAccommodationAdjusted")),
+        "fees_total": number_of(money.get("totalFees")),  # includes the cleaning fee
+        "taxes_total": number_of(money.get("totalTaxes")),
+        "channel_host_fee": number_of(money.get("hostServiceFee")),
     }
     return {key: value for key, value in candidates.items() if value is not None}
 
