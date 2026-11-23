@@ -96,7 +96,7 @@ cursor only records how many reservations to skip. pmsbridge refuses a cursor it
 |---|---|
 | `inquiry` | inquiry |
 | `awaiting_payment`, `reserved` | pending |
-| `confirmed` | confirmed |
+| `confirmed` | confirmed, or checked in or checked out when Guesty recorded the stay (see below) |
 | `checked_in` | checked in |
 | `checked_out`, `completed` | checked out |
 | `canceled` | cancelled |
@@ -106,6 +106,13 @@ cursor only records how many reservations to skip. pmsbridge refuses a cursor it
 
 The status Guesty sent is always kept as the extra value `pms_status`, so an "unknown" reservation can
 still be told apart.
+
+Guesty usually keeps a booking `confirmed` after the guest arrives and leaves, and records the stay
+separately in `guestStay.status`. A confirmed booking whose stay is recorded as `checked_in` or
+`checked_out` is shown as checked in or checked out. Guesty's search cannot filter on the stay, so a
+filter for checked-in or checked-out stays also asks Guesty for confirmed bookings and keeps only the
+matching ones; a page can then hold fewer reservations than asked for, and the cursor still moves on. A
+past stay whose check-out nobody recorded stays confirmed.
 
 ## What is shown and how it is mapped
 
@@ -155,8 +162,11 @@ notes: pmsbridge drops Guesty's key-code field, but a code typed into a normal n
 - **Search by guest name**: Guesty's reservation search cannot find a guest by name, email or phone, so
   the search text only matches a confirmation code, exactly. To find a guest's bookings, list by date and
   look at the guest on each one with `get_reservation`.
-- **Total price**: shown only when Guesty gives the guest's total (`money.totalPrice`), which channel
-  bookings such as Airbnb usually do not. `get_reservation` also shows the host payout
+- **Total price**: Guesty's `money.totalPrice` when it gives one, otherwise the booking's gross amount:
+  `accommodation_fare` + `fees_total` + `taxes_total` (`get_reservation` only; lists have no money).
+  On a direct booking this is what the guest paid. On a channel booking it is the gross before the
+  channel's host fee; a service fee the channel charges the guest on top, and does not share with the
+  host, is not included. `get_reservation` also shows the host payout
   (`money.hostPayout`), the amount paid (`money.totalPaid`) and the currency as extra values, and the
   balance due. Payments and payment methods are never shown.
 - **Gross amounts**: Airbnb never tells the host what the guest paid in total (its guest service fee is

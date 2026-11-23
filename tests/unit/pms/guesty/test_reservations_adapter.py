@@ -115,7 +115,8 @@ def test_the_status_filter_uses_the_reverse_map_without_repeats() -> None:
             ]
         )
     )
-    assert filters == {"filter[status]": "checked_out,completed,closed,alteration"}
+    # Confirmed is asked for too: Guesty keeps a finished stay as confirmed (see guestStay).
+    assert filters == {"filter[status]": "checked_out,completed,confirmed,closed,alteration"}
     assert reservations.build_filters(ReservationQuery(statuses=[])) == {}
     assert reservations.build_filters(ReservationQuery()) == {}
 
@@ -777,3 +778,71 @@ def test_a_by_ids_result_gives_the_gross_breakdown_that_adds_up_to_the_payout() 
     )
     assert gross == 1140
     assert round(gross - float(extras["channel_host_fee"]), 2) == extras["host_payout"]  # type: ignore[arg-type]
+
+
+# ---- stay status and the gross total ----
+
+
+@pytest.mark.parametrize(
+    ("stay", "expected"),
+    [
+        ("checked_out", ReservationStatus.CHECKED_OUT),
+        ("checked_in", ReservationStatus.CHECKED_IN),
+        ("no_show", ReservationStatus.CONFIRMED),
+        ("not_set", ReservationStatus.CONFIRMED),
+    ],
+)
+def test_a_confirmed_booking_takes_its_recorded_stay_status(
+    stay: str, expected: ReservationStatus
+) -> None:
+    item = {**by_ids_item({}), "guestStay": {"status": stay}}
+    found = reservations.map_reservation(item)
+    assert found is not None and found.status is expected
+
+
+def test_a_cancelled_booking_keeps_its_status_whatever_the_stay_says() -> None:
+    item = {**by_ids_item({}), "status": "canceled", "guestStay": {"status": "checked_out"}}
+    found = reservations.map_reservation(item)
+    assert found is not None and found.status is ReservationStatus.CANCELLED
+
+
+async def test_listing_checked_out_stays_asks_for_confirmed_and_keeps_only_finished_ones(
+    router: respx.MockRouter,
+) -> None:
+    finished = {**by_ids_item({}), "guestStay": {"status": "checked_out"}}
+    upcoming = {**by_ids_item({}), "_id": "6a2000000000000000000002"}
+    route = router.get(SEARCH_URL).mock(
+        return_value=httpx.Response(
+            200,
+            json={"results": [finished, upcoming], "pagination": {"hasMore": False}},
+        )
+    )
+    page = await reservations.build(make_client()).list_reservations(
+        ReservationQuery(statuses=[ReservationStatus.CHECKED_OUT])
+    )
+    assert "confirmed" in query_of(route)["filter[status]"].split(",")
+    assert [item.id for item in page.items] == [RESERVATION_ID]
+
+
+def test_without_a_total_price_the_gross_is_fare_plus_fees_plus_taxes() -> None:
+    found = reservations.map_reservation(
+        by_ids_item(
+            {
+                "currency": "AED",
+                "fareAccommodationAdjusted": 7673.97,
+                "totalFees": 630,
+                "totalTaxes": 415.2,
+                "hostServiceFee": 1287.12,
+                "hostPayout": 7432.05,
+            }
+        )
+    )
+    assert found is not None and found.total_price is not None
+    assert str(found.total_price.amount) == "8719.17" and found.total_price.currency == "AED"
+
+
+def test_a_missing_part_leaves_the_total_price_empty() -> None:
+    found = reservations.map_reservation(
+        by_ids_item({"currency": "AED", "fareAccommodationAdjusted": 100, "totalFees": 20})
+    )
+    assert found is not None and found.total_price is None

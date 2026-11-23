@@ -147,7 +147,12 @@ def test_every_canonical_status_has_a_reverse_mapping() -> None:
     for canonical, names in STATUS_TO_GUESTY.items():
         for name in names:
             expected = STATUS_FROM_GUESTY.get(name, ReservationStatus.UNKNOWN)
-            assert expected is canonical
+            # A stay that started or ended is a confirmed booking with a recorded stay status.
+            via_stay = name == "confirmed" and canonical in {
+                ReservationStatus.CHECKED_IN,
+                ReservationStatus.CHECKED_OUT,
+            }
+            assert expected is canonical or via_stay
 
 
 def test_notes_are_labelled_and_never_include_the_door_code() -> None:

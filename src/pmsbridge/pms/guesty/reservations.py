@@ -20,6 +20,7 @@ logged. Shared helpers are in `common.py`.
 import logging
 import re
 from datetime import date, timedelta
+from decimal import Decimal
 from typing import Final
 
 from pydantic import ValidationError
@@ -82,8 +83,11 @@ STATUS_TO_GUESTY: Final[dict[ReservationStatus, tuple[str, ...]]] = {
     ReservationStatus.INQUIRY: ("inquiry",),
     ReservationStatus.PENDING: ("awaiting_payment", "reserved"),
     ReservationStatus.CONFIRMED: ("confirmed",),
-    ReservationStatus.CHECKED_IN: ("checked_in",),
-    ReservationStatus.CHECKED_OUT: ("checked_out", "completed"),
+    # Guesty usually keeps a stay that has started or ended as `confirmed` and records the stay in
+    # `guestStay.status`, which its search cannot filter on. Confirmed bookings are asked for too,
+    # and the list keeps only those whose mapped status matches (see `_status`).
+    ReservationStatus.CHECKED_IN: ("checked_in", "confirmed"),
+    ReservationStatus.CHECKED_OUT: ("checked_out", "completed", "confirmed"),
     ReservationStatus.CANCELLED: ("canceled",),
     ReservationStatus.DECLINED: ("declined",),
     ReservationStatus.EXPIRED: ("expired",),
@@ -117,13 +121,22 @@ NOTE_LABELS: Final = (
 # ---- Mapping ----
 
 
-def _status(value: object) -> ReservationStatus:
+# A confirmed booking whose stay Guesty recorded as started or ended (`guestStay.status`).
+_STAY_STATUS: Final[dict[str, ReservationStatus]] = {
+    "checked_in": ReservationStatus.CHECKED_IN,
+    "checked_out": ReservationStatus.CHECKED_OUT,
+}
+
+
+def _status(value: object, stay_status: object = None) -> ReservationStatus:
     text = text_of(value)
-    return (
-        STATUS_FROM_GUESTY.get(text.lower(), ReservationStatus.UNKNOWN)
-        if text
-        else (ReservationStatus.UNKNOWN)
-    )
+    found = STATUS_FROM_GUESTY.get(text.lower(), ReservationStatus.UNKNOWN) if text else None
+    if found is None:
+        return ReservationStatus.UNKNOWN
+    stay = (text_of(stay_status) or "").lower()
+    if found is ReservationStatus.CONFIRMED and stay in _STAY_STATUS:
+        return _STAY_STATUS[stay]
+    return found
 
 
 def _stays(item: dict[str, object]) -> list[dict[str, object]]:
@@ -200,8 +213,25 @@ def _extras(item: dict[str, object], status: str | None) -> dict[str, ExtraValue
 
 
 def _total_price(item: dict[str, object]) -> Money | None:
+    """Guesty's `totalPrice` when given, else the gross amount: fare + fees + taxes.
+
+    Checked on live bookings: these three added up to what a direct guest paid, and on Airbnb to
+    the booking's gross, which minus Airbnb's host fee is the host payout. A service fee a channel
+    charges the guest on top (and does not share with the host) is not included.
+    """
     money = as_dict(item.get("money")) or {}
-    return money_of(money.get("totalPrice"), money.get("currency"))
+    given = money_of(money.get("totalPrice"), money.get("currency"))
+    if given is not None:
+        return given
+    parts = [
+        money_of(money.get(key), money.get("currency"))
+        for key in ("fareAccommodationAdjusted", "totalFees", "totalTaxes")
+    ]
+    if any(part is None for part in parts):
+        return None
+    amounts = [part.amount for part in parts if part is not None]
+    currency = parts[0].currency if parts[0] is not None else ""
+    return Money(amount=sum(amounts, Decimal(0)), currency=currency)
 
 
 def map_reservation(raw: object) -> Reservation | None:
@@ -230,7 +260,7 @@ def map_reservation(raw: object) -> Reservation | None:
         return Reservation(
             id=reservation_id,
             listing_id=listing_id,
-            status=_status(status),
+            status=_status(status, (as_dict(item.get("guestStay")) or {}).get("status")),
             channel=text_of(item.get("channel")) or text_of(item.get("platform")),
             confirmation_code=text_of(item.get("confirmationCode")),
             guest_id=text_of(item.get("guestId")) or text_of(item.get("bookerId")),
@@ -329,6 +359,9 @@ class GuestyReservations:
         raw, has_more = _results(response.json())
         raw = raw[: query.limit]
         items = [found for entry in raw if (found := map_reservation(entry)) is not None]
+        if query.statuses:
+            # Guesty's status alone cannot tell a confirmed booking from a finished stay.
+            items = [item for item in items if item.status in query.statuses]
         consumed = skip + len(raw)
         more = has_more if has_more is not None else len(raw) >= query.limit
         next_cursor = encode_cursor(consumed) if more and raw and consumed <= MAX_SKIP else None

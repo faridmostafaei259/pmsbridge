@@ -267,7 +267,9 @@ async def test_guesty_list_end_to_end(world: World, guesty: respx.MockRouter) ->
     assert params["filter[status]"] == "confirmed" and params["limit"] == "3"
     assert params["filter[checkIn][gte]"] == "2027-03-01" and params["sort"] == "checkIn"
     page = result["structuredContent"]
-    assert len(page["items"]) == 3 and page["next_cursor"]
+    # Only confirmed bookings are kept, even from a page Guesty did not filter.
+    assert page["items"] and page["next_cursor"]
+    assert all(item["status"] == "confirmed" for item in page["items"])
     assert all(item["guest"] is None for item in page["items"])
     shown = str(result)
     for leaked in (DOOR_CODE, "keyCode", "doneBy", "EXT-INVENTED", "merchantOfRecord"):
