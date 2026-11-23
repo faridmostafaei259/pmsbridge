@@ -69,6 +69,8 @@ All notable changes to this project are documented here. The format follows
 - `update_photo_caption`, `reorder_photos` and `delete_photo` for listing photos. Deleting cannot be undone and is confirmed by reading the photo list again. Needs the connection's change switch.
 - In-container admin commands: `python -m pmsbridge.admin <feature> <action>` (users, keys, oauth, connections), with audit lines on standard error.
 - `deploy/env.example` and a step-by-step guide to a manual test installation.
+- One-command installer (`install.sh`) for Ubuntu 22.04+ and Debian 12+: installs Docker from Docker's official repository if missing, opens ports 80 and 443 in ufw or firewalld, asks only for the domain and an email, explains the DNS record and checks it, creates the encryption key (file mode 600), starts the stack, waits until it is healthy and prints a one-time setup link for the first administrator. It is safe to run again: the key and data are kept.
+- Install guide with step-by-step DNS guidance.
 
 ### Changed
 - A connection name that matches several allowed connections only by upper or lower case gets a clear message listing them.
@@ -81,6 +83,7 @@ All notable changes to this project are documented here. The format follows
 - Newly registered assistants never get a client id that starts with a minus sign, which the `--client` option of `oauth revoke-ai-access` could not accept; `--client=<id>` also works for older ids.
 
 ### Security
+- The installer never writes the encryption key or the setup link to its log file and makes no third-party IP-lookup calls.
 - Guest message text is treated as untrusted: tool descriptions tell the assistant never to follow instructions found in messages, and message text is never logged.
 - `/mcp` refuses browser requests whose `Origin` header is not this server's own address (error 403).
 - Calls refused by the per-approval limit are recorded at most once a minute per approval, so a flood cannot grow the tool-call record.

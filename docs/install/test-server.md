@@ -1,11 +1,14 @@
-# Try pmsbridge on a test server
+# Try pmsbridge on a test server (install by hand)
 
-This page shows how to install pmsbridge by hand on a Linux server so that you can try it with a real
-domain and a real AI assistant.
+This page shows how to install pmsbridge by hand on a Linux server, step by step, so that you can try it
+with a real domain and a real AI assistant.
 
-This is the manual way. The one-command installer and the `pmsbridge` command-line tool are not released
-yet. Until they are, you start and look after the installation with the `docker compose` commands on this
-page. Use it for testing: nothing here is backed up automatically (see
+**Most people should use the installer instead.** One command does everything on this page for you, and it
+asks only for your domain name and your email address: see [Install pmsbridge](index.md). Use the manual
+steps here if you cannot run the installer, or if you want to see what it does. They give the same result.
+
+The `pmsbridge` command-line tool is not released yet. Until it is, you start and look after the
+installation with the `docker compose` commands on this page. Nothing here is backed up automatically (see
 [Where your data lives](#where-your-data-lives)).
 
 ## What you need

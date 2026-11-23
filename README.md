@@ -26,7 +26,15 @@ as is, without warranty.
 
 ## Quick start
 
-A one-command installer for Linux servers is in development. See [docs/](docs/index.md) for progress.
+Install on a fresh Ubuntu 22.04+ or Debian 12+ server with one command:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/faridmostafaei259/pmsbridge/main/install.sh | sudo bash
+```
+
+It asks for your domain name and an email address, explains the DNS record to create, installs Docker if
+needed, starts pmsbridge and prints a one-time setup link for the first administrator. See
+[Install pmsbridge](docs/install/index.md).
 
 ## Documentation
 

@@ -6,7 +6,8 @@ theme:
   name: material
 nav:
   - Home: index.md
-  - Try pmsbridge on a test server: install/test-server.md
+  - Install pmsbridge: install/index.md
+  - Install by hand (test server): install/test-server.md
   - TLS and domains: tls-and-domains.md
   - User guide: user-guide.md
   - Connect an AI assistant: connect-ai-clients.md
