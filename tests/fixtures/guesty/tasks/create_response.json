@@ -1,0 +1,31 @@
+{
+  "_id": "6a9000000000000000000t10",
+  "title": "Deep clean before arrival",
+  "description": "Focus on the kitchen and the bathrooms.",
+  "type": "cleaning",
+  "status": "pending",
+  "priority": "medium",
+  "apply": {
+    "type": "reservation",
+    "listingId": "6a1000000000000000000a01",
+    "reservationId": "6a2000000000000000000b01"
+  },
+  "timing": {
+    "type": "flexible",
+    "canStartAfter": "2026-11-30T09:00:00.000Z",
+    "mustFinishBefore": "2026-12-01T10:00:00.000Z"
+  },
+  "assigneeId": "6a8000000000000000000u01",
+  "supervisorId": "6a8000000000000000000u09",
+  "assigneeGroup": ["cleaners"],
+  "timezone": "UTC",
+  "checklist": ["Wash the linen", "Restock soap", "Check the oven"],
+  "checklistFinished": ["Wash the linen"],
+  "checklistAggregated": [
+    {"name": "Wash the linen", "finished": true, "at": "2026-11-30T10:00:00.000Z", "by": "6a8000000000000000000u01"},
+    {"name": "Restock soap", "finished": false},
+    {"name": "Check the oven", "finished": false}
+  ],
+  "comment": {"text": "Keys are with the neighbour."},
+  "afterEffects": []
+}

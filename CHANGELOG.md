@@ -64,6 +64,7 @@ All notable changes to this project are documented here. The format follows
 - Guesty reviews: `list_reviews` lists guest reviews (rating with its scale, public text, existing reply, channel, dates) and `reply_to_review` posts one public reply. Replying needs the connection's change switch, is sent once and never repeated, and is refused when the review already has a reply.
 - Owner tools for Guesty: `list_owners` and `get_owner` (name, email, phone and listing ids; payout, bank and tax details are never requested or shown).
 - `list_reservation_payments` for Guesty: the payments of a reservation with amount, status, a plain method word and due and paid times; card, bank and payment method details are never shown.
+- Guesty task tools: `list_tasks` (including cleaning tasks, with checklists where Guesty provides them) and `create_task`, which creates one task and is never repeated. Creating needs the connection's change switch.
 
 ### Changed
 - A connection name that matches several allowed connections only by upper or lower case gets a clear message listing them.

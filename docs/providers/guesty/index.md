@@ -93,6 +93,7 @@ Each feature has its own page with the Guesty endpoints it calls and how their d
 - [Reviews](reviews.md)
 - [Owners](owners.md)
 - [Payments](payments.md)
+- [Tasks](tasks.md)
 
 pmsbridge itself also calls these, for every feature:
 

@@ -22,6 +22,7 @@ nav:
           - Reviews: providers/guesty/reviews.md
           - Owners: providers/guesty/owners.md
           - Payments: providers/guesty/payments.md
+          - Tasks: providers/guesty/tasks.md
   - Configuration: configuration.md
   - Architecture: architecture.md
   - Security model: security/threat-model.md
