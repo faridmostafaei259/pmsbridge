@@ -67,6 +67,8 @@ All notable changes to this project are documented here. The format follows
 - Guesty task tools: `list_tasks` (including cleaning tasks, with checklists where Guesty provides them) and `create_task`, which creates one task and is never repeated. Creating needs the connection's change switch.
 - `add_reservation_note` adds an internal note to a reservation as a comment, without touching existing notes or the door code. Needs the connection's change switch.
 - `update_photo_caption`, `reorder_photos` and `delete_photo` for listing photos. Deleting cannot be undone and is confirmed by reading the photo list again. Needs the connection's change switch.
+- In-container admin commands: `python -m pmsbridge.admin <feature> <action>` (users, keys, oauth, connections), with audit lines on standard error.
+- `deploy/env.example` and a step-by-step guide to a manual test installation.
 
 ### Changed
 - A connection name that matches several allowed connections only by upper or lower case gets a clear message listing them.

@@ -105,10 +105,8 @@ docker compose -f deploy/compose.yaml exec app python -m pmsbridge.admin users c
 The only thing the command prints is the link, which looks like `https://mcp.example.com/setup?token=...`.
 Open it in your browser within 24 hours.
 
-**What exists today.** The simpler host command `pmsbridge create-admin` arrives with the installer and
-command-line tool and is not available yet. The in-container entry point used above,
-`python -m pmsbridge.admin`, also arrives with that packaging work. Until it does, the command above does not
-run on a fresh image, even though the `users create-admin` action itself is already built and tested.
+**What exists today.** The in-container command above works. The simpler host command
+`pmsbridge create-admin` arrives with the installer and command-line tool and is not available yet.
 
 What happens next:
 
@@ -300,8 +298,8 @@ in again. If you also forgot the password, run
 `users reset-admin-password` first. Anyone who can run these commands already controls the server, so keep
 access to it limited.
 
-**What exists today.** As for `create-admin`, the `python -m pmsbridge.admin` entry point and the host
-command `pmsbridge users` arrive with the installer and command-line tool.
+**What exists today.** The in-container `python -m pmsbridge.admin users ...` commands work. The host
+command `pmsbridge users` arrives with the installer and command-line tool.
 
 ## Authorizing AI assistants
 
@@ -513,10 +511,8 @@ docker compose -f deploy/compose.yaml exec app python -m pmsbridge.admin oauth r
 - Exit codes: 0 done (also when nothing matched), 1 refused (no such person or assistant), 2 bad options or the
   database cannot be used.
 
-**What exists today.** The `python -m pmsbridge.admin` entry point and a host command arrive with the
-installer and command-line tool. Until the entry point ships, the commands above do not run on a fresh image,
-even though the `oauth revoke-ai-access` action itself is already built and tested. In the meantime, use the
-**Assistants** page to revoke one person's approvals for one assistant.
+**What exists today.** The in-container commands above work. A host command arrives with the installer and
+command-line tool. You can also use the **Assistants** page to revoke one person's approvals for one assistant.
 
 There are no signing keys to rotate. Tokens are random values checked against the database, so revoking takes
 effect straight away and there is nothing to roll over.

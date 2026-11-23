@@ -552,7 +552,9 @@ async def test_no_photo_change_logs_the_caption_or_the_upstream_text(
     router: respx.MockRouter, caplog: pytest.LogCaptureFixture
 ) -> None:
     caplog.set_level(logging.DEBUG)
-    photo_list(router, fixture("photos_three.json"), json_response({"message": "private"}, 500))
+    photo_list(
+        router, fixture("photos_three.json"), json_response({"message": "zq-upstream-detail"}, 500)
+    )
     router.delete(f"{LIST_URL}/{A2}").mock(return_value=httpx.Response(204))
     router.post(f"{LIST_URL}/{A1}").mock(
         return_value=json_response({"message": "secret caption words"}, 500)
@@ -565,7 +567,7 @@ async def test_no_photo_change_logs_the_caption_or_the_upstream_text(
             PhotoCaptionUpdate(listing_id=ID, photo_id=A1, caption="secret caption words")
         )
     recorded = " ".join(f"{r.getMessage()} {r.__dict__}" for r in caplog.records)
-    assert "secret caption words" not in recorded and "private" not in recorded
+    assert "secret caption words" not in recorded and "zq-upstream-detail" not in recorded
 
 
 def test_capabilities_and_wiring() -> None:
