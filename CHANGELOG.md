@@ -56,6 +56,8 @@ All notable changes to this project are documented here. The format follows
 - Guesty listings (read only): `list_listings`, `get_listing`, `get_listing_details` and `list_listing_photos` let an AI assistant list properties, look one up, read its descriptions, amenities and check-in instructions, and see its photos. Guesty's staff-only listing text is never read.
 - Guesty reservations (read only): `list_reservations` (filters for property, status, check-in, check-out, booking date and confirmation code, with paging) and `get_reservation` (adds the guest's name, email and phone and the balance due when Guesty provides them). Door and lock codes are never read.
 - Each AI assistant approval is limited to 60 tool calls a minute, of which 10 may change data. An assistant over the limit is told how many seconds to wait.
+- Calendar and price tools for Guesty: `get_calendar` (day-by-day availability, prices and minimum stays) and `get_pricing_settings` (base and weekend price, fees, discounts, stay limits).
+- `update_calendar`, the first tool that changes data: sets prices, minimum stays or availability for up to 31 date ranges, only on connections where an administrator allowed changes. It sends nothing when a range starts before yesterday, the calendar cannot be checked completely, a price is in the wrong currency or far from the listing's base price or a day's current price, or availability would change on a booked or multi-unit day. If a later range fails, it reports exactly which ranges were applied. Changes are never repeated automatically.
 
 ### Changed
 - A connection name that matches several allowed connections only by upper or lower case gets a clear message listing them.

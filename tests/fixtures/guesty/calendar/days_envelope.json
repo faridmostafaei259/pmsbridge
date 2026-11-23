@@ -1,0 +1,16 @@
+{
+  "data": {
+    "days": {
+      "listingId": "6a3000000000000000000001",
+      "startDate": "2030-06-01",
+      "endDate": "2030-06-03",
+      "currency": "usd",
+      "calendar": [
+        {"date": "2030-06-03", "price": 230, "minNights": 3, "status": "available"},
+        {"date": "2030-06-01", "price": 210.5, "minNights": 3, "status": "available"},
+        {"date": "2030-06-01", "price": 999, "status": "unavailable"},
+        {"date": "2030-06-02", "price": 220, "minNights": 3, "status": "unavailable", "blocks": {"m": true}}
+      ]
+    }
+  }
+}

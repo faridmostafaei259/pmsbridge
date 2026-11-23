@@ -1,0 +1,14 @@
+{
+  "_id": "6a3000000000000000000001",
+  "prices": {
+    "currency": "GBP",
+    "basePrice": -5,
+    "weekendBasePrice": "120",
+    "cleaningFee": {"value": {"valueType": "FIXED", "multiplier": "PER_STAY", "formula": 60}},
+    "extraPersonFee": 0,
+    "guestsIncludedInRegularFee": -1,
+    "weeklyPriceFactor": 0,
+    "monthlyPriceFactor": 1.5
+  },
+  "terms": {"minNights": "two"}
+}

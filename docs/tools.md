@@ -17,6 +17,21 @@ example `guesty_`) only work with connections to that system.
 - Lists are limited in size, and every call stops after 25 seconds.
 - Tool names, parameters and results are only ever added to in updates, never renamed or removed.
 
+## `get_calendar`
+
+**Read only.**
+
+Get the calendar of one property day by day: availability, price and minimum stay.
+
+Returns one entry per day from start to end, both included, at most 366 days. Each day says whether it is available, its price per night and minimum stay, and, when it is booked, the reservation id (use get_reservation for the guest). A blocked day has a short reason. Days the property management system does not return are left out.
+
+| Argument | Type | Required | Description |
+|---|---|---|---|
+| `listing_id` | string | yes | The listing id from list_listings. |
+| `start` | string | yes | First day, a date written YYYY-MM-DD. |
+| `end` | string | yes | Last day (included), a date written YYYY-MM-DD. |
+| `connection` | string (optional) | no | The connection to use: its name or id as shown by list_connections. Optional when only one connection is available. |
+
 ## `get_listing`
 
 **Read only.**
@@ -37,6 +52,19 @@ Returns its name, address, bedrooms, guest capacity, base price, time zone and c
 Get the full content of one property: descriptions, amenities and check-in instructions.
 
 Returns the listing's descriptions, the amenities it has and does not have, how guests check in, and its custom fields, where the property management system has them.
+
+| Argument | Type | Required | Description |
+|---|---|---|---|
+| `listing_id` | string | yes | The listing id from list_listings. |
+| `connection` | string (optional) | no | The connection to use: its name or id as shown by list_connections. Optional when only one connection is available. |
+
+## `get_pricing_settings`
+
+**Read only.**
+
+Get the standing price settings of one property.
+
+Returns its currency, base and weekend price, cleaning fee, extra guest fee and how many guests are included, security deposit, weekly and monthly discounts (in percent) and minimum and maximum stay. Prices for single days are in get_calendar.
 
 | Argument | Type | Required | Description |
 |---|---|---|---|
@@ -116,4 +144,20 @@ The earliest check-in comes first (set check_in_from to leave out past bookings)
 | `search` | string (optional) | no | A confirmation code or guest name to look for. What is matched depends on the property management system; if a name finds nothing, list by date instead and check the guest on each booking with get_reservation. Omit for all. |
 | `limit` | integer (optional) | no | How many reservations to return (1 to 100). |
 | `cursor` | string (optional) | no | The next_cursor of the previous result, to get the next page. |
+| `connection` | string (optional) | no | The connection to use: its name or id as shown by list_connections. Optional when only one connection is available. |
+
+## `update_calendar`
+
+**Changes data.**
+
+Change prices, minimum stays or availability for date ranges of one property.
+
+Ask the person to confirm the exact dates and amounts before calling this. Each range sets a price per night, a minimum stay or availability (or several) for every day from start to end, both included. At most 31 ranges per call; prices are in the listing's own currency. A price that looks like a mistake, a different currency, an availability change on a booked day, or a change that cannot be checked against the current calendar is refused and nothing is sent. If a later range fails, the message says which ranges were applied. Returns the changed days as they are afterwards.
+
+This changes data in the property management system. It only works on connections where an administrator has allowed changes, and it is never repeated automatically.
+
+| Argument | Type | Required | Description |
+|---|---|---|---|
+| `listing_id` | string | yes | The listing id from list_listings. |
+| `updates` | list of object | yes | The ranges to change, applied in order. Each has start and end (YYYY-MM-DD) and at least one of price (with currency), min_nights and available. |
 | `connection` | string (optional) | no | The connection to use: its name or id as shown by list_connections. Optional when only one connection is available. |

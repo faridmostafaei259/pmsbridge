@@ -1,7 +1,6 @@
-"""Helpers for the Guesty reservation tests: invented fixtures, a stand-in token manager, a client.
+"""Helpers for the Guesty reservation tests: invented fixtures and the shared client helpers.
 
-Nothing here talks to the real service. The only network is a respx router, and the token manager
-is replaced so no token is ever requested.
+Nothing here talks to the real service (see `guesty_client_helpers`).
 """
 
 import json
@@ -9,13 +8,9 @@ from pathlib import Path
 
 import httpx
 import respx
-
-from pmsbridge.pms.base import Provider
-from pmsbridge.pms.guesty.client import GuestyClient
-from pmsbridge.pms.http import PMSHttpClient
+from guesty_client_helpers import BASE, StandInTokens, json_response, make_client, mock_router
 
 FIXTURES = Path(__file__).resolve().parents[1] / "fixtures" / "guesty" / "reservations"
-BASE = "https://open-api.guesty.com/v1"
 SEARCH_URL = f"{BASE}/reservations-v3/search"
 BY_IDS_URL = f"{BASE}/reservations-v3"
 REPORTS_URL = f"{BASE}/reservations-reports/reservations/search"
@@ -31,41 +26,31 @@ GUEST_EMAIL = "alex.invented@example.test"
 GUEST_PHONE = "+15550100"
 GUEST_NOTE = "Arriving late, after nine."
 
+__all__ = [
+    "BASE",
+    "BY_IDS_URL",
+    "DOOR_CODE",
+    "GUEST_EMAIL",
+    "GUEST_ID",
+    "GUEST_NAME",
+    "GUEST_NOTE",
+    "GUEST_PHONE",
+    "GUEST_URL",
+    "REPORTS_URL",
+    "RESERVATION_ID",
+    "SEARCH_URL",
+    "STAFF_NAME",
+    "StandInTokens",
+    "fixture",
+    "json_response",
+    "make_client",
+    "mock_detail",
+    "mock_router",
+]
+
 
 def fixture(name: str) -> object:
     return json.loads((FIXTURES / name).read_text())
-
-
-class StandInTokens:
-    """What `GuestyClient` needs from the token manager, without any token request."""
-
-    account_id: str | None = "acct-reservation-tests"
-
-    async def get_token(self) -> str:
-        return "fake-access-token"
-
-    async def touch_success(self) -> None:
-        return None
-
-    async def refresh_after_rejection(self, rejected: str) -> str | None:
-        return None
-
-    async def mark_needs_attention(self) -> None:
-        return None
-
-
-def make_client() -> GuestyClient:
-    http = PMSHttpClient(Provider.GUESTY, BASE)
-    return GuestyClient(StandInTokens(), "conn-reservation-tests", http)  # type: ignore[arg-type]
-
-
-def json_response(body: object, status: int = 200) -> httpx.Response:
-    return httpx.Response(status, json=body)
-
-
-def mock_router() -> respx.MockRouter:
-    """Every outgoing request is intercepted. An unmocked address fails the test."""
-    return respx.mock(assert_all_called=False)
 
 
 def mock_detail(

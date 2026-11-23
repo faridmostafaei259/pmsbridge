@@ -79,7 +79,7 @@ request, so pmsbridge sends it again after that wait. If a change fails part-way
 its outcome is unknown, so you can check in Guesty before trying again.
 
 After an expired token, pmsbridge gets a new token and repeats reads once. It does not repeat
-changes: the AI assistant is told that nothing was changed and that it can try again.
+changes: the AI assistant is told that this change was not made and that it can try again.
 
 ## Endpoints used
 
@@ -87,6 +87,7 @@ Each feature has its own page with the Guesty endpoints it calls and how their d
 
 - [Listings, listing details and photos](listings.md)
 - [Reservations](reservations.md)
+- [Calendar and prices](calendar.md)
 
 pmsbridge itself also calls these, for every feature:
 

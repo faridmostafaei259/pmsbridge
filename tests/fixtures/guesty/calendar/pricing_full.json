@@ -1,0 +1,16 @@
+{
+  "_id": "6a3000000000000000000001",
+  "prices": {
+    "currency": "eur",
+    "basePrice": 150,
+    "basePriceUSD": 165,
+    "weekendBasePrice": 180,
+    "cleaningFee": 60,
+    "extraPersonFee": 15.5,
+    "guestsIncludedInRegularFee": 2,
+    "securityDepositFee": 200,
+    "weeklyPriceFactor": 0.9,
+    "monthlyPriceFactor": 0.8
+  },
+  "terms": {"minNights": 2, "maxNights": 30, "cancellation": "STANDARD"}
+}

@@ -1,0 +1,14 @@
+[
+  {"date": "2030-05-31", "listingId": "6a3000000000000000000001", "currency": "EUR", "price": 140, "status": "available", "minNights": 2},
+  {"date": "2030-06-01", "listingId": "6a3000000000000000000001", "currency": "EUR", "price": 150, "isBasePrice": true, "minNights": 2, "isBaseMinNights": true, "status": "available", "blocks": {"m": false, "r": false}, "blockRefs": [], "cta": false, "ctd": false},
+  {"date": "2030-06-02", "listingId": "6a3000000000000000000001", "currency": "EUR", "price": 150, "minNights": 2, "status": "booked", "reservationId": "6a3000000000000000000b01", "blocks": {"r": true}, "blockRefs": [{"type": "r", "note": "STAFF-NOTE-INVENTED: owner stays, gate code 0000"}]},
+  {"date": "2030-06-03", "listingId": "6a3000000000000000000001", "currency": "EUR", "price": 150, "minNights": 2, "status": "unavailable", "blocks": {"m": true, "o": false}, "blockRefs": [{"type": "m", "note": "STAFF-NOTE-INVENTED: painting the hall"}]},
+  {"date": "2030-06-04", "listingId": "6a3000000000000000000001", "currency": "EUR", "price": 150, "status": "available", "allotment": 0},
+  {"date": "2030-06-05", "listingId": "6a3000000000000000000001", "currency": "EUR", "price": 150, "status": "unavailable", "allotment": 2},
+  {"date": "2030-06-06", "listingId": "6a3000000000000000000001", "currency": "EUR", "price": 99.5},
+  {"date": "2030-06-07", "listingId": "6a3000000000000000000001", "currency": "EUR", "price": "free", "minNights": -1, "status": "Available"},
+  {"date": "2030-06-08", "listingId": "6a3000000000000000000999", "currency": "EUR", "price": 150, "status": "available"},
+  {"listingId": "6a3000000000000000000001", "price": 150, "status": "available"},
+  {"date": "2030-06-09", "listingId": "6a3000000000000000000001", "currency": "EUR", "price": 150, "status": "unavailable", "blocks": {"zz": true}},
+  {"date": "2030-06-30", "listingId": "6a3000000000000000000001", "currency": "EUR", "price": 160, "status": "available"}
+]

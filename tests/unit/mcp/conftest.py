@@ -16,6 +16,7 @@ from pmsbridge.core.crypto import generate_key
 from pmsbridge.core.settings import clear_settings_cache
 from pmsbridge.core.storage import reset_database
 from pmsbridge.mcp.framework import reset_rate_limits
+from pmsbridge.pms.guesty import client as guesty_client
 
 FEATURES = ("pmsbridge.core.web", "pmsbridge.oauth.web", "pmsbridge.mcp.server")
 
@@ -34,6 +35,7 @@ def _environment(monkeypatch: pytest.MonkeyPatch) -> None:
 @pytest.fixture(autouse=True)
 def _fresh_rate_limits() -> None:
     reset_rate_limits()
+    guesty_client.reset_throttles()
 
 
 @pytest.fixture
