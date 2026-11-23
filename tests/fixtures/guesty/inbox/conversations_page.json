@@ -1,0 +1,54 @@
+{
+  "status": 200,
+  "data": {
+    "count": 3,
+    "countUnread": 1,
+    "limit": 3,
+    "cursor": {"after": "ZmFrZS1jdXJzb3ItMQ", "before": ""},
+    "conversations": [
+      {
+        "_id": "6a5000000000000000000c01",
+        "createdAt": "2026-03-01T10:00:00.000Z",
+        "state": {
+          "read": false,
+          "status": "OPEN",
+          "lastMessage": {"body": "SECRET-LAST-BODY invented preview", "date": "2026-03-05T09:30:00.000Z"}
+        },
+        "assignee": {"_id": "6a5000000000000000000e01"},
+        "priority": 2,
+        "meta": {
+          "guest": {
+            "_id": "6a3000000000000000000a01",
+            "fullName": "Alex Invented",
+            "email": "alex.invented@example.test",
+            "isReturning": true
+          },
+          "reservations": [
+            {
+              "_id": "6a4000000000000000000b01",
+              "status": "confirmed",
+              "checkIn": "2026-04-01T15:00:00.000Z",
+              "checkOut": "2026-04-05T11:00:00.000Z",
+              "confirmationCode": "INV-1234",
+              "listing": {"_id": "6a1000000000000000000d01", "title": "Invented Beach House"}
+            }
+          ]
+        }
+      },
+      {
+        "_id": "6a5000000000000000000c02",
+        "createdAt": "2026-03-02T10:00:00.000Z",
+        "state": {"read": true, "status": "OPEN"},
+        "lastMessageFrom": {"user": "2026-03-03T08:00:00.000Z", "nonUser": "2026-03-04T08:00:00.000Z"},
+        "meta": {
+          "guest": {"_id": "6a3000000000000000000a02", "fullName": "Sam Madeup"},
+          "reservations": [
+            {"_id": "6a4000000000000000000b02", "listing": {"_id": "6a1000000000000000000d02"}},
+            {"_id": "6a4000000000000000000b03", "listing": {"_id": "6a1000000000000000000d03"}}
+          ]
+        }
+      },
+      {"_id": "6a5000000000000000000c03"}
+    ]
+  }
+}

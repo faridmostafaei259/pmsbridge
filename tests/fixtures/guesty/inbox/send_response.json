@@ -1,0 +1,14 @@
+{
+  "status": 200,
+  "data": {
+    "post": {
+      "_id": "6a6000000000000000000f10",
+      "conversationId": "6a5000000000000000000c01",
+      "body": "Welcome! Check-in is from 3 pm.",
+      "createdAt": "2026-03-06T10:00:00.000Z",
+      "module": {"type": "airbnb2"},
+      "from": {"fullName": "Riley Staffer", "type": "user"},
+      "sentBy": "host"
+    }
+  }
+}

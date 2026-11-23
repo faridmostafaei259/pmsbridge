@@ -21,6 +21,9 @@ MAX_SKIP: Final = 100_000
 _CURSOR_PATTERN: Final = re.compile(r"^skip=(\d{1,6})$")
 _DATE_PATTERN: Final = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 _CURRENCY_PATTERN: Final = re.compile(r"^[A-Z]{3}$")
+MAX_TOKEN_LENGTH: Final = 500
+TOKEN_CURSOR_PREFIX: Final = "t."  # noqa: S105  (a cursor marker, not a password)
+_TOKEN_PATTERN: Final = re.compile(r"^[\x21-\x7e]{1,500}$")
 
 
 def quote_id(value: str) -> str:
@@ -134,3 +137,39 @@ def decode_cursor(cursor: str | None) -> int:
     if skip > MAX_SKIP:
         raise invalid
     return skip
+
+
+def _usable_token(token: str) -> bool:
+    """A paging token Guesty made: short printable text with no spaces and no URL in it."""
+    return (
+        len(token) <= MAX_TOKEN_LENGTH and bool(_TOKEN_PATTERN.match(token)) and "://" not in token
+    )
+
+
+def encode_token_cursor(token: object) -> str | None:
+    """An opaque cursor that wraps a paging token from Guesty, or None when there is no usable one.
+
+    For Guesty lists that page with `cursorAfter`. The token is only ever sent back as a query
+    value; an unusable one (empty, long, with spaces or a URL) ends the paging instead.
+    """
+    text = text_of(token)
+    if text is None or not _usable_token(text):
+        return None
+    return TOKEN_CURSOR_PREFIX + base64.urlsafe_b64encode(text.encode("ascii")).decode().rstrip("=")
+
+
+def decode_token_cursor(cursor: str | None) -> str | None:
+    """The Guesty paging token in a cursor from `encode_token_cursor`; any other is refused."""
+    if cursor is None:
+        return None
+    invalid = PMSValidationError("Invalid pagination cursor.")
+    if not cursor.startswith(TOKEN_CURSOR_PREFIX):
+        raise invalid
+    encoded = cursor[len(TOKEN_CURSOR_PREFIX) :]
+    try:
+        raw = base64.urlsafe_b64decode(encoded + "=" * (-len(encoded) % 4)).decode("ascii")
+    except (binascii.Error, UnicodeDecodeError, ValueError):
+        raise invalid from None
+    if not _usable_token(raw) or encode_token_cursor(raw) != cursor:
+        raise invalid
+    return raw
