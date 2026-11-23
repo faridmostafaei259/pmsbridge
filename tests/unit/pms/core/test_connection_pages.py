@@ -103,7 +103,7 @@ async def test_an_administrator_sees_the_columns_and_the_controls(boss: Site) ->
         "key ending 1234",
         "Working",
         "Off (read only)",
-        "3 of 5",
+        "3 left",
         "never",
         "Add a Guesty connection",
         "Replace credentials",

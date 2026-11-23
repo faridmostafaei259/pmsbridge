@@ -28,7 +28,7 @@
         <td>{{ row.provider | capitalize }}</td>
         <td>{{ status_text[row.status] }}</td>
         <td>{{ "Allowed" if row.writes_enabled else "Off (read only)" }}</td>
-        <td>{% if row.provider == "guesty" and row.budget_remaining is not none %}{{ row.budget_remaining }} of 5{% if row.budget_reset_at %}<br><span class="muted">next at {{ row.budget_reset_at.strftime("%Y-%m-%d %H:%M UTC") }}</span>{% endif %}{% elif row.provider == "guesty" %}not known{% else %}-{% endif %}</td>
+        <td>{% if row.provider == "guesty" and row.budget_remaining is not none %}{{ row.budget_remaining }} left{% if row.budget_reset_at %}<br><span class="muted">next at {{ row.budget_reset_at.strftime("%Y-%m-%d %H:%M UTC") }}</span>{% endif %}{% elif row.provider == "guesty" %}not known{% else %}-{% endif %}</td>
         <td>{{ row.last_success_at.strftime("%Y-%m-%d %H:%M UTC") if row.last_success_at else "never" }}</td>
         {% if is_admin %}
         <td>
