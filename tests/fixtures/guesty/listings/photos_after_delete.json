@@ -1,0 +1,4 @@
+[
+  {"_id": "6a1f0000000000000000a001", "original": "https://images.example.test/a.jpg", "caption": "First", "index": 0},
+  {"_id": "6a1f0000000000000000a003", "original": "https://images.example.test/c.jpg", "caption": "Third", "index": 1}
+]

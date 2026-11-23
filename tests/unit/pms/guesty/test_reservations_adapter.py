@@ -1,5 +1,6 @@
 """The Guesty reservation adapter through the real client, with respx as the only network."""
 
+import json
 import logging
 import time
 from collections.abc import AsyncIterator
@@ -9,6 +10,7 @@ import httpx
 import pytest
 import respx
 from guesty_reservation_helpers import (
+    BASE,
     BY_IDS_URL,
     DOOR_CODE,
     GUEST_EMAIL,
@@ -19,24 +21,32 @@ from guesty_reservation_helpers import (
     REPORTS_URL,
     RESERVATION_ID,
     SEARCH_URL,
+    StandInTokens,
     fixture,
     json_response,
     make_client,
     mock_detail,
     mock_router,
 )
+from pydantic import ValidationError
 
 from pmsbridge.pms.base import (
+    WRITE_CAPABILITIES,
     Capability,
-    CapabilityNotSupportedError,
+    PMSAuthError,
+    PMSError,
     PMSNotFoundError,
+    PMSRateLimitedError,
     PMSUpstreamError,
     PMSValidationError,
+    Provider,
     call_deadline,
 )
 from pmsbridge.pms.guesty import reservations
+from pmsbridge.pms.guesty.client import GuestyClient
 from pmsbridge.pms.guesty.common import MAX_SKIP, decode_cursor, encode_cursor
 from pmsbridge.pms.guesty.provider import DOMAIN_MODULES, discover_domains
+from pmsbridge.pms.http import PMSHttpClient
 from pmsbridge.pms.models import (
     ReservationNote,
     ReservationQuery,
@@ -410,21 +420,235 @@ async def test_logs_never_hold_guest_details_or_notes(
         assert private not in recorded
 
 
-# ---- add note, capabilities ----
+# ---- add note ----
+
+NOTE_TEXT = "Guest asked for a late checkout."
+COMMENTS_URL = f"{BY_IDS_URL}/{RESERVATION_ID}/comments"
 
 
-async def test_adding_a_note_is_refused_and_sends_nothing(router: respx.MockRouter) -> None:
+def note_of(text: str = NOTE_TEXT, reservation_id: str = RESERVATION_ID) -> ReservationNote:
+    return ReservationNote(reservation_id=reservation_id, note=text)
+
+
+def mock_comment(router: respx.MockRouter, answer: httpx.Response | None = None) -> respx.Route:
+    return router.post(COMMENTS_URL).mock(
+        return_value=answer or json_response(fixture("comment_response.json"), 201)
+    )
+
+
+async def test_a_note_is_one_post_of_the_text_alone_then_a_read(router: respx.MockRouter) -> None:
+    comment = mock_comment(router)
+    by_ids = router.get(BY_IDS_URL).mock(return_value=json_response(fixture("by_ids.json")))
+    reservation = await reservations.build(make_client()).add_reservation_note(note_of())
+    assert comment.call_count == 1 and by_ids.call_count == 1
+    request = comment.calls.last.request
+    assert json.loads(request.content) == {"body": NOTE_TEXT}  # no mentions, parent or notes keys
+    assert request.headers["authorization"] == "Bearer fake-access-token"
+    assert dict(by_ids.calls.last.request.url.params) == {"reservationIds": RESERVATION_ID}
+    assert reservation.id == RESERVATION_ID and reservation.confirmation_code == "TST-1001"
+    assert DOOR_CODE not in reservation.model_dump_json()
+
+
+async def test_a_note_never_writes_the_notes_fields_or_the_door_code(
+    router: respx.MockRouter,
+) -> None:
+    mock_comment(router)
+    router.get(BY_IDS_URL).mock(return_value=json_response(fixture("by_ids.json")))
+    others = router.route(method__in=["PUT", "PATCH", "DELETE"]).mock(
+        return_value=json_response({})
+    )
+    await reservations.build(make_client()).add_reservation_note(note_of())
+    assert others.call_count == 0
+    sent = [call.request for call in router.calls if call.request.method == "POST"]
+    assert len(sent) == 1 and "keyCode" not in sent[0].content.decode()
+
+
+async def test_the_note_text_is_trimmed_and_sent_whole(router: respx.MockRouter) -> None:
+    comment = mock_comment(router)
+    router.get(BY_IDS_URL).mock(return_value=json_response(fixture("by_ids.json")))
+    text = 'Line one.\nLine two with "quotes" and <tags>.'
+    await reservations.build(make_client()).add_reservation_note(note_of(f"  {text}  "))
+    assert json.loads(comment.calls.last.request.content) == {"body": text}
+
+
+@pytest.mark.parametrize("text", [" ", "\n\t "])
+async def test_a_blank_note_is_refused_and_sends_nothing(
+    router: respx.MockRouter, text: str
+) -> None:
     route = router.route().mock(return_value=json_response({}))
-    with pytest.raises(CapabilityNotSupportedError):
-        await reservations.build(make_client()).add_reservation_note(
-            ReservationNote(reservation_id=RESERVATION_ID, note="Please call the guest.")
-        )
+    with pytest.raises(ValidationError):  # the canonical model already trims and refuses it
+        note_of(text)
+    unchecked = ReservationNote.model_construct(reservation_id=RESERVATION_ID, note=text)
+    with pytest.raises(PMSValidationError):
+        await reservations.build(make_client()).add_reservation_note(unchecked)
     assert route.call_count == 0
 
 
+async def test_a_note_longer_than_guesty_allows_is_refused_and_sends_nothing(
+    router: respx.MockRouter,
+) -> None:
+    comment = mock_comment(router)
+    router.get(BY_IDS_URL).mock(return_value=json_response(fixture("by_ids.json")))
+    api = reservations.build(make_client())
+    with pytest.raises(PMSValidationError) as caught:
+        await api.add_reservation_note(note_of("x" * (reservations.MAX_COMMENT_LENGTH + 1)))
+    assert "x" * 50 not in caught.value.message and comment.call_count == 0
+    await api.add_reservation_note(note_of("x" * reservations.MAX_COMMENT_LENGTH))
+    assert comment.call_count == 1
+
+
+async def test_a_bad_id_is_refused_and_a_hostile_one_stays_in_the_path(
+    router: respx.MockRouter,
+) -> None:
+    posts = router.post(url__regex=r".*/comments$").mock(return_value=json_response({}, 404))
+    api = reservations.build(make_client())
+    with pytest.raises(PMSValidationError):
+        await api.add_reservation_note(note_of(reservation_id="a,b"))
+    assert posts.call_count == 0
+    with pytest.raises(PMSNotFoundError):
+        await api.add_reservation_note(note_of(reservation_id="a/b?x=1"))
+    sent = posts.calls.last.request
+    assert sent.url.raw_path.decode() == "/v1/reservations-v3/a%2Fb%3Fx%3D1/comments"
+
+
+async def test_an_unknown_reservation_is_not_found_and_nothing_is_read_after(
+    router: respx.MockRouter,
+) -> None:
+    comment = mock_comment(router, json_response({"message": "private upstream"}, 404))
+    by_ids = router.get(BY_IDS_URL).mock(return_value=json_response(fixture("by_ids.json")))
+    with pytest.raises(PMSNotFoundError) as caught:
+        await reservations.build(make_client()).add_reservation_note(note_of())
+    assert "private upstream" not in caught.value.message
+    assert comment.call_count == 1 and by_ids.call_count == 0
+
+
+@pytest.mark.parametrize("status", [400, 403, 422, 500])
+async def test_a_refused_note_is_not_sent_again_and_hides_the_upstream_text(
+    router: respx.MockRouter, status: int
+) -> None:
+    comment = mock_comment(router, json_response({"message": "private upstream"}, status))
+    by_ids = router.get(BY_IDS_URL).mock(return_value=json_response(fixture("by_ids.json")))
+    with pytest.raises(PMSError) as caught:
+        await reservations.build(make_client()).add_reservation_note(note_of())
+    assert "private upstream" not in caught.value.message and NOTE_TEXT not in caught.value.message
+    assert comment.call_count == 1 and by_ids.call_count == 0
+
+
+async def test_a_timeout_means_the_outcome_is_unknown_and_nothing_is_sent_again(
+    router: respx.MockRouter,
+) -> None:
+    comment = router.post(COMMENTS_URL).mock(side_effect=httpx.ReadTimeout("slow"))
+    by_ids = router.get(BY_IDS_URL).mock(return_value=json_response(fixture("by_ids.json")))
+    with pytest.raises(PMSUpstreamError) as caught:
+        await reservations.build(make_client()).add_reservation_note(note_of())
+    assert "outcome is unknown" in caught.value.message
+    assert comment.call_count == 1 and by_ids.call_count == 0
+
+
+async def test_a_429_without_a_wait_time_is_not_sent_again(router: respx.MockRouter) -> None:
+    comment = mock_comment(router, httpx.Response(429))
+    with pytest.raises(PMSRateLimitedError):
+        await reservations.build(make_client()).add_reservation_note(note_of())
+    assert comment.call_count == 1
+
+
+async def test_a_429_with_a_wait_time_is_sent_again_once_after_the_wait(
+    router: respx.MockRouter,
+) -> None:
+    comment = router.post(COMMENTS_URL).mock(
+        side_effect=[
+            httpx.Response(429, headers={"Retry-After": "0"}),
+            json_response(fixture("comment_response.json"), 201),
+        ]
+    )
+    router.get(BY_IDS_URL).mock(return_value=json_response(fixture("by_ids.json")))
+    await reservations.build(make_client()).add_reservation_note(note_of())
+    assert comment.call_count == 2  # the first was not processed
+
+
+async def test_an_expired_token_on_a_note_is_renewed_but_the_note_is_not_resent(
+    router: respx.MockRouter,
+) -> None:
+    class Renewing(StandInTokens):
+        async def refresh_after_rejection(self, rejected: str) -> str | None:
+            return "renewed-token"
+
+    comment = mock_comment(router, httpx.Response(401))
+    http = PMSHttpClient(Provider.GUESTY, BASE)
+    client = GuestyClient(Renewing(), "conn-guesty-tests", http)  # type: ignore[arg-type]
+    with pytest.raises(PMSAuthError) as caught:
+        await reservations.build(client).add_reservation_note(note_of())
+    assert "Nothing was changed" in caught.value.message and comment.call_count == 1
+
+
+async def test_a_failed_read_after_the_note_says_it_was_added(router: respx.MockRouter) -> None:
+    comment = mock_comment(router)
+    router.get(BY_IDS_URL).mock(return_value=json_response({"message": "private"}, 500))
+    with pytest.raises(PMSUpstreamError) as caught:
+        await reservations.build(make_client()).add_reservation_note(note_of())
+    assert caught.value.message == (
+        "The note was added to the reservation, but the reservation could not be read back "
+        "afterwards. Do not add the note again."
+    )
+    assert comment.call_count == 1
+
+
+async def test_a_read_that_no_longer_finds_the_reservation_also_says_it_was_added(
+    router: respx.MockRouter,
+) -> None:
+    comment = mock_comment(router)
+    router.get(BY_IDS_URL).mock(return_value=json_response([]))
+    with pytest.raises(PMSUpstreamError, match="Do not add the note again"):
+        await reservations.build(make_client()).add_reservation_note(note_of())
+    assert comment.call_count == 1
+
+
+async def test_too_little_time_left_sends_nothing(
+    router: respx.MockRouter, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    route = router.route().mock(return_value=json_response({}))
+    monkeypatch.setattr(reservations, "remaining_seconds", lambda: 0.5)
+    with pytest.raises(PMSUpstreamError, match="ran out"):
+        await reservations.build(make_client()).add_reservation_note(note_of())
+    assert route.call_count == 0
+
+
+async def test_a_deadline_that_has_passed_sends_nothing(router: respx.MockRouter) -> None:
+    route = router.route().mock(return_value=json_response({}))
+    token = call_deadline.set(time.monotonic() - 1)
+    try:
+        with pytest.raises(PMSUpstreamError, match="ran out"):
+            await reservations.build(make_client()).add_reservation_note(note_of())
+    finally:
+        call_deadline.reset(token)
+    assert route.call_count == 0
+
+
+async def test_the_note_text_never_reaches_the_log(
+    router: respx.MockRouter, caplog: pytest.LogCaptureFixture
+) -> None:
+    caplog.set_level(logging.DEBUG)
+    mock_comment(router, json_response({"message": NOTE_TEXT}, 500))
+    with pytest.raises(PMSError):
+        await reservations.build(make_client()).add_reservation_note(note_of())
+    mock_comment(router)
+    router.get(BY_IDS_URL).mock(return_value=json_response({}, 500))
+    with pytest.raises(PMSError):
+        await reservations.build(make_client()).add_reservation_note(note_of())
+    assert caplog.records
+    recorded = " ".join(f"{r.getMessage()} {r.__dict__}" for r in caplog.records)
+    assert NOTE_TEXT not in recorded and "late checkout" not in recorded
+
+
+# ---- capabilities ----
+
+
 def test_capabilities_and_wiring() -> None:
-    assert {Capability.RESERVATIONS_READ} == reservations.CAPABILITIES
-    assert Capability.RESERVATIONS_ADD_NOTE not in reservations.CAPABILITIES
+    assert {
+        Capability.RESERVATIONS_READ,
+        Capability.RESERVATIONS_ADD_NOTE,
+    } == reservations.CAPABILITIES
+    assert Capability.RESERVATIONS_ADD_NOTE in WRITE_CAPABILITIES
     assert DOMAIN_MODULES["reservations"] == "reservations"
     assert discover_domains()["reservations"] is reservations
     assert isinstance(reservations.build(make_client()), reservations.GuestyReservations)

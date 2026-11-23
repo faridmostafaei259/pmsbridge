@@ -65,6 +65,8 @@ All notable changes to this project are documented here. The format follows
 - Owner tools for Guesty: `list_owners` and `get_owner` (name, email, phone and listing ids; payout, bank and tax details are never requested or shown).
 - `list_reservation_payments` for Guesty: the payments of a reservation with amount, status, a plain method word and due and paid times; card, bank and payment method details are never shown.
 - Guesty task tools: `list_tasks` (including cleaning tasks, with checklists where Guesty provides them) and `create_task`, which creates one task and is never repeated. Creating needs the connection's change switch.
+- `add_reservation_note` adds an internal note to a reservation as a comment, without touching existing notes or the door code. Needs the connection's change switch.
+- `update_photo_caption`, `reorder_photos` and `delete_photo` for listing photos. Deleting cannot be undone and is confirmed by reading the photo list again. Needs the connection's change switch.
 
 ### Changed
 - A connection name that matches several allowed connections only by upper or lower case gets a clear message listing them.

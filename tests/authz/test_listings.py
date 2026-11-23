@@ -31,7 +31,14 @@ from pmsbridge.core.settings import clear_settings_cache
 from pmsbridge.core.storage import reset_database
 from pmsbridge.pms import registry
 from pmsbridge.pms.base import Capability, PMSProvider
-from pmsbridge.pms.models import Listing, ListingDetails, ListingPhoto
+from pmsbridge.pms.models import (
+    Listing,
+    ListingDetails,
+    ListingPhoto,
+    PhotoCaptionUpdate,
+    PhotoDelete,
+    PhotoOrder,
+)
 from pmsbridge.pms.testing import FakeProvider
 
 SECRET_LABEL = "Confidential owner portfolio"  # noqa: S105
@@ -40,7 +47,11 @@ TOOL_ARGUMENTS: dict[str, dict[str, object]] = {
     "get_listing": {"listing_id": "l1"},
     "get_listing_details": {"listing_id": "l1"},
     "list_listing_photos": {"listing_id": "l1"},
+    "update_photo_caption": {"listing_id": "l1", "photo_id": "p1", "caption": "New"},
+    "reorder_photos": {"listing_id": "l1", "photo_ids": ["p1"]},
+    "delete_photo": {"listing_id": "l1", "photo_id": "p1"},
 }
+PHOTO_CHANGES = ("update_photo_caption", "reorder_photos", "delete_photo")
 
 
 class FakeContent:
@@ -50,12 +61,26 @@ class FakeContent:
     async def list_listing_photos(self, listing_id: str) -> list[ListingPhoto]:
         return [ListingPhoto(id="p1", url="https://images.example.test/1.jpg")]
 
+    async def update_photo_caption(self, update: PhotoCaptionUpdate) -> ListingPhoto:
+        return ListingPhoto(id=update.photo_id, url="https://images.example.test/1.jpg")
+
+    async def reorder_photos(self, order: PhotoOrder) -> list[ListingPhoto]:
+        return [ListingPhoto(id="p1", url="https://images.example.test/1.jpg")]
+
+    async def delete_photo(self, photo: PhotoDelete) -> None:
+        return None
+
 
 class ContentProvider(FakeProvider):
     @property
     def capabilities(self) -> frozenset[Capability]:
         return frozenset(
-            {Capability.LISTINGS_READ, Capability.LISTING_DETAILS_READ, Capability.PHOTOS_READ}
+            {
+                Capability.LISTINGS_READ,
+                Capability.LISTING_DETAILS_READ,
+                Capability.PHOTOS_READ,
+                Capability.PHOTOS_WRITE,
+            }
         )
 
     @property
@@ -120,8 +145,8 @@ async def test_a_connection_that_is_not_approved_looks_like_an_unknown_one(
     client: httpx.AsyncClient, loads: list[str], tool: str
 ) -> None:
     ada = await seed_user("ada@example.test", role="staff")
-    mine = await seed_connection("Beach houses")
-    secret = await seed_connection(SECRET_LABEL)
+    mine = await seed_connection("Beach houses", writes_enabled=True)
+    secret = await seed_connection(SECRET_LABEL, writes_enabled=True)
     token, _ = await mint_token(ada, connections=(mine,))
     answers: list[str] = []
     for asked in (secret, SECRET_LABEL, SECRET_LABEL.upper(), "0" * 32, "no such label"):
@@ -138,8 +163,8 @@ async def test_a_staff_member_with_an_approved_connection_can_read(
     client: httpx.AsyncClient, loads: list[str], tool: str
 ) -> None:
     ada = await seed_user("ada@example.test", role="staff")
-    mine = await seed_connection("Beach houses")
-    await seed_connection(SECRET_LABEL)
+    mine = await seed_connection("Beach houses", writes_enabled=True)
+    await seed_connection(SECRET_LABEL, writes_enabled=True)
     token, _ = await mint_token(ada, connections=(mine,))
     result = await call(client, token, tool, **TOOL_ARGUMENTS[tool])
     assert result["isError"] is False, result_text(result)
@@ -147,12 +172,27 @@ async def test_a_staff_member_with_an_approved_connection_can_read(
     assert SECRET_LABEL not in str(result)
 
 
+@pytest.mark.parametrize("tool", PHOTO_CHANGES)
+async def test_an_approved_connection_without_the_change_switch_cannot_change_photos(
+    client: httpx.AsyncClient, loads: list[str], tool: str
+) -> None:
+    ada = await seed_user("ada@example.test", role="staff")
+    mine = await seed_connection("Beach houses", writes_enabled=False)
+    token, _ = await mint_token(ada, connections=(mine,))
+    reading = await call(client, token, "list_listing_photos", listing_id="l1")
+    assert reading["isError"] is False
+    loads.clear()
+    refused = await call(client, token, tool, **TOOL_ARGUMENTS[tool])
+    assert refused["isError"] is True and "Changes are not allowed" in result_text(refused)
+    assert loads == []
+
+
 async def test_with_two_connections_the_tools_need_the_name_and_only_use_approved_ones(
     client: httpx.AsyncClient, loads: list[str]
 ) -> None:
     ada = await seed_user("ada@example.test", role="staff")
-    first = await seed_connection("Beach houses")
-    second = await seed_connection("City flats")
+    first = await seed_connection("Beach houses", writes_enabled=True)
+    second = await seed_connection("City flats", writes_enabled=True)
     token, _ = await mint_token(ada, connections=(first, second))
     unclear = await call(client, token, "list_listings")
     assert unclear["isError"] is True and loads == []
@@ -165,7 +205,7 @@ async def test_a_revoked_grant_is_refused(
     client: httpx.AsyncClient, loads: list[str], tool: str
 ) -> None:
     ada = await seed_user("ada@example.test", role="staff")
-    mine = await seed_connection("Beach houses")
+    mine = await seed_connection("Beach houses", writes_enabled=True)
     token, _ = await mint_token(ada, connections=(mine,), revoke_grant=True)
     response = await rpc(
         client, token, "tools/call", {"name": tool, "arguments": TOOL_ARGUMENTS[tool]}
@@ -177,7 +217,7 @@ async def test_a_revoked_grant_is_refused(
 
 async def test_a_disabled_person_is_refused(client: httpx.AsyncClient, loads: list[str]) -> None:
     ada = await seed_user("ada@example.test", role="staff")
-    mine = await seed_connection("Beach houses")
+    mine = await seed_connection("Beach houses", writes_enabled=True)
     token, _ = await mint_token(ada, connections=(mine,))
     await disable_user(ada)
     response = await rpc(client, token, "tools/call", {"name": "list_listings", "arguments": {}})

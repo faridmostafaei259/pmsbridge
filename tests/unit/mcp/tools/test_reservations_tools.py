@@ -1,5 +1,6 @@
 """The reservation tools through the MCP endpoint: with a fake provider and with Guesty adapters."""
 
+import json
 from collections.abc import AsyncIterator, Iterator
 from datetime import date
 from typing import Any
@@ -24,6 +25,7 @@ from guesty_reservation_helpers import (
 )
 from mcp_helpers import call_tool, mint_token, result_text, rpc, seed_connection, seed_user
 
+from pmsbridge.mcp import framework
 from pmsbridge.pms import registry
 from pmsbridge.pms.base import (
     Capability,
@@ -38,12 +40,15 @@ from pmsbridge.pms.models import (
     GuestSummary,
     Page,
     Reservation,
+    ReservationNote,
     ReservationQuery,
     ReservationStatus,
 )
 from pmsbridge.pms.testing import FakeProvider
 
 TOOLS = ("list_reservations", "get_reservation")
+NOTE_TEXT = "Guest asked for a late checkout."
+COMMENTS_URL = f"{BY_IDS_URL}/{RESERVATION_ID}/comments"
 
 
 def make_reservation(number: int) -> Reservation:
@@ -62,6 +67,7 @@ class FakeReservations:
     def __init__(self, items: list[Reservation]) -> None:
         self.items = items
         self.queries: list[ReservationQuery] = []
+        self.notes: list[ReservationNote] = []
 
     async def list_reservations(self, query: ReservationQuery) -> Page[Reservation]:
         self.queries.append(query)
@@ -73,6 +79,10 @@ class FakeReservations:
                 return item
         raise PMSNotFoundError("Reservation not found.")
 
+    async def add_reservation_note(self, note: ReservationNote) -> Reservation:
+        self.notes.append(note)
+        return await self.get_reservation(note.reservation_id)
+
 
 class ReservationsProvider(FakeProvider):
     def __init__(self, api: FakeReservations) -> None:
@@ -81,7 +91,7 @@ class ReservationsProvider(FakeProvider):
 
     @property
     def capabilities(self) -> frozenset[Capability]:
-        return frozenset({Capability.RESERVATIONS_READ})
+        return frozenset({Capability.RESERVATIONS_READ, Capability.RESERVATIONS_ADD_NOTE})
 
     @property
     def reservations(self):  # type: ignore[no-untyped-def]
@@ -95,6 +105,7 @@ class World:
         self.connection_id = ""
 
     async def call(self, name: str, **arguments: object) -> dict[str, Any]:
+        arguments = {"connection": "Beach houses", **arguments}
         return await call_tool(self.client, self.token, name, arguments)  # type: ignore[return-value]
 
 
@@ -102,8 +113,9 @@ class World:
 async def world(app: FastAPI, client: httpx.AsyncClient) -> AsyncIterator[World]:
     built = World(client)
     user = await seed_user()
-    built.connection_id = await seed_connection("Beach houses")
-    built.token, _ = await mint_token(user, connections=(built.connection_id,))
+    built.connection_id = await seed_connection("Beach houses", writes_enabled=True)
+    read_only = await seed_connection("Read only", writes_enabled=False)
+    built.token, _ = await mint_token(user, connections=(built.connection_id, read_only))
     yield built
 
 
@@ -157,7 +169,19 @@ async def test_the_tools_are_listed_as_read_only(world: World) -> None:
         in (by_name["list_reservations"]["description"])
     )
     assert "contact details and balance" in by_name["get_reservation"]["description"]
-    assert "add_reservation_note" not in by_name
+
+
+async def test_the_note_tool_is_a_gated_change_with_a_clear_description(world: World) -> None:
+    listed = (await rpc(world.client, world.token, "tools/list")).json()["result"]["tools"]
+    tool = {t["name"]: t for t in listed}["add_reservation_note"]
+    assert tool["annotations"]["readOnlyHint"] is False
+    assert "changes data" in tool["description"]
+    assert tool["inputSchema"]["required"] == ["reservation_id", "note"]
+    assert set(tool["inputSchema"]["properties"]) == {"reservation_id", "note", "connection"}
+    words = " ".join(tool["description"].split())
+    assert "never sees it" in words and "nothing already written is changed" in words
+    assert "get their confirmation first" in words and "outcome is unknown" in words
+    assert "guesty" not in str(tool).lower() and "hostaway" not in str(tool).lower()
 
 
 async def test_the_tools_do_not_name_a_provider(world: World) -> None:
@@ -227,6 +251,7 @@ async def test_a_provider_without_reservations_refuses_the_tools(
     for name, arguments in (
         ("list_reservations", {}),
         ("get_reservation", {"reservation_id": "x"}),
+        ("add_reservation_note", {"reservation_id": "x", "note": "Hi"}),
     ):
         refused = await world.call(name, **arguments)
         assert refused["isError"] is True and "does not support" in result_text(refused)
@@ -317,3 +342,102 @@ async def test_over_long_filters_are_refused_before_any_request(
     assert route.call_count == 0
     accepted = await world.call("list_reservations", search="x" * 200)
     assert accepted["isError"] is False and route.call_count == 1
+
+
+# ---- Adding a note ----
+
+
+async def test_a_note_builds_the_canonical_request(
+    world: World, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    api = FakeReservations([make_reservation(1)])
+    use_fake_provider(monkeypatch, api)
+    result = await world.call("add_reservation_note", reservation_id=" r1 ", note=NOTE_TEXT)
+    assert result["isError"] is False, result_text(result)
+    assert api.notes == [ReservationNote(reservation_id="r1", note=NOTE_TEXT)]
+    assert result["structuredContent"]["id"] == "r1"
+
+
+async def test_a_bad_note_or_id_is_refused_plainly_without_repeating_the_text(
+    world: World, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    api = FakeReservations([make_reservation(1)])
+    use_fake_provider(monkeypatch, api)
+    long = "draft words " * 500
+    for arguments in (
+        {"reservation_id": "r1", "note": ""},
+        {"reservation_id": "r1", "note": "   "},
+        {"reservation_id": "r1", "note": long},
+        {"reservation_id": " ", "note": "Hi"},
+    ):
+        refused = await world.call("add_reservation_note", **arguments)
+        assert refused["isError"] is True, arguments
+        assert "draft words" not in result_text(refused)
+    assert api.notes == []
+
+
+async def test_a_note_is_refused_where_changes_are_not_allowed(
+    world: World, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    api = FakeReservations([make_reservation(1)])
+    use_fake_provider(monkeypatch, api)
+    refused = await world.call(
+        "add_reservation_note", connection="Read only", reservation_id="r1", note="Hi"
+    )
+    assert refused["isError"] is True
+    assert "Changes are not allowed on the connection" in result_text(refused)
+    assert api.notes == []
+    reading = await world.call("get_reservation", connection="Read only", reservation_id="r1")
+    assert reading["isError"] is False  # reading still works on a read-only connection
+
+
+async def test_notes_have_their_own_limit_for_each_approval(
+    world: World, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    api = FakeReservations([make_reservation(1)])
+    use_fake_provider(monkeypatch, api)
+    for _ in range(framework.WRITES_BURST):
+        done = await world.call("add_reservation_note", reservation_id="r1", note="Hi")
+        assert done["isError"] is False
+    refused = await world.call("add_reservation_note", reservation_id="r1", note="Hi")
+    assert refused["isError"] is True and "changes too quickly" in result_text(refused)
+    assert len(api.notes) == framework.WRITES_BURST
+    assert (await world.call("get_reservation", reservation_id="r1"))["isError"] is False
+
+
+async def test_guesty_note_end_to_end_is_one_post_then_a_read(
+    world: World, guesty: respx.MockRouter
+) -> None:
+    comment = guesty.post(COMMENTS_URL).mock(
+        return_value=json_response(fixture("comment_response.json"), 201)
+    )
+    by_ids = guesty.get(BY_IDS_URL).mock(return_value=json_response(fixture("by_ids.json")))
+    result = await world.call("add_reservation_note", reservation_id=RESERVATION_ID, note=NOTE_TEXT)
+    assert result["isError"] is False, result_text(result)
+    assert comment.call_count == 1 and by_ids.call_count == 1
+    assert json.loads(comment.calls.last.request.content) == {"body": NOTE_TEXT}
+    assert result["structuredContent"]["id"] == RESERVATION_ID
+    shown = str(result)
+    for leaked in (DOOR_CODE, "keyCode", "doneBy", "Invented Staffmember"):
+        assert leaked not in shown
+
+
+async def test_guesty_note_timeout_reports_an_unknown_outcome_and_is_not_resent(
+    world: World, guesty: respx.MockRouter
+) -> None:
+    comment = guesty.post(COMMENTS_URL).mock(side_effect=httpx.ReadTimeout("slow"))
+    result = await world.call("add_reservation_note", reservation_id=RESERVATION_ID, note=NOTE_TEXT)
+    assert result["isError"] is True
+    assert "outcome is unknown" in result_text(result) and comment.call_count == 1
+
+
+async def test_guesty_note_failures_do_not_leak_upstream_text_or_the_draft(
+    world: World, guesty: respx.MockRouter
+) -> None:
+    guesty.post(COMMENTS_URL).mock(return_value=json_response({"message": "private upstream"}, 403))
+    result = await world.call(
+        "add_reservation_note", reservation_id=RESERVATION_ID, note="secret draft words"
+    )
+    assert result["isError"] is True
+    assert "private upstream" not in result_text(result)
+    assert "secret draft" not in result_text(result)

@@ -1,7 +1,8 @@
 """Who may use the reservation tools: only people with a valid token, on connections it allows.
 
 A connection the token does not allow gets exactly the answer an unknown one gets, no provider is
-built for it, and nothing about it appears in any answer.
+built for it, and nothing about it appears in any answer. Adding a note also needs the connection's
+change switch.
 """
 
 import asyncio
@@ -32,13 +33,20 @@ from pmsbridge.core.settings import clear_settings_cache
 from pmsbridge.core.storage import reset_database
 from pmsbridge.pms import registry
 from pmsbridge.pms.base import Capability, PMSProvider
-from pmsbridge.pms.models import GuestSummary, Page, Reservation, ReservationQuery
+from pmsbridge.pms.models import (
+    GuestSummary,
+    Page,
+    Reservation,
+    ReservationNote,
+    ReservationQuery,
+)
 from pmsbridge.pms.testing import FakeProvider
 
 SECRET_LABEL = "Confidential owner portfolio"  # noqa: S105
 TOOL_ARGUMENTS: dict[str, dict[str, object]] = {
     "list_reservations": {},
     "get_reservation": {"reservation_id": "r1"},
+    "add_reservation_note": {"reservation_id": "r1", "note": "Call the guest."},
 }
 RESERVATION = Reservation(
     id="r1",
@@ -57,11 +65,14 @@ class FakeReservations:
     async def get_reservation(self, reservation_id: str) -> Reservation:
         return RESERVATION
 
+    async def add_reservation_note(self, note: ReservationNote) -> Reservation:
+        return RESERVATION
+
 
 class ReservationsProvider(FakeProvider):
     @property
     def capabilities(self) -> frozenset[Capability]:
-        return frozenset({Capability.RESERVATIONS_READ})
+        return frozenset({Capability.RESERVATIONS_READ, Capability.RESERVATIONS_ADD_NOTE})
 
     @property
     def reservations(self):  # type: ignore[no-untyped-def]
@@ -125,8 +136,8 @@ async def test_a_connection_that_is_not_approved_looks_like_an_unknown_one(
     client: httpx.AsyncClient, loads: list[str], tool: str
 ) -> None:
     ada = await seed_user("ada@example.test", role="staff")
-    mine = await seed_connection("Beach houses")
-    secret = await seed_connection(SECRET_LABEL)
+    mine = await seed_connection("Beach houses", writes_enabled=True)
+    secret = await seed_connection(SECRET_LABEL, writes_enabled=True)
     token, _ = await mint_token(ada, connections=(mine,))
     answers: list[str] = []
     for asked in (secret, SECRET_LABEL, SECRET_LABEL.upper(), "0" * 32, "no such label"):
@@ -139,12 +150,12 @@ async def test_a_connection_that_is_not_approved_looks_like_an_unknown_one(
 
 
 @pytest.mark.parametrize("tool", sorted(TOOL_ARGUMENTS))
-async def test_a_staff_member_with_an_approved_connection_can_read(
+async def test_a_staff_member_with_an_approved_connection_can_use_the_tools(
     client: httpx.AsyncClient, loads: list[str], tool: str
 ) -> None:
     ada = await seed_user("ada@example.test", role="staff")
-    mine = await seed_connection("Beach houses")
-    await seed_connection(SECRET_LABEL)
+    mine = await seed_connection("Beach houses", writes_enabled=True)
+    await seed_connection(SECRET_LABEL, writes_enabled=True)
     token, _ = await mint_token(ada, connections=(mine,))
     result = await call(client, token, tool, **TOOL_ARGUMENTS[tool])
     assert result["isError"] is False, result_text(result)
@@ -152,12 +163,28 @@ async def test_a_staff_member_with_an_approved_connection_can_read(
     assert SECRET_LABEL not in str(result)
 
 
+async def test_an_approved_connection_without_the_change_switch_can_read_but_not_add_a_note(
+    client: httpx.AsyncClient, loads: list[str]
+) -> None:
+    ada = await seed_user("ada@example.test", role="staff")
+    mine = await seed_connection("Beach houses", writes_enabled=False)
+    token, _ = await mint_token(ada, connections=(mine,))
+    for tool in ("list_reservations", "get_reservation"):
+        assert (await call(client, token, tool, **TOOL_ARGUMENTS[tool]))["isError"] is False
+    loads.clear()
+    refused = await call(
+        client, token, "add_reservation_note", **TOOL_ARGUMENTS["add_reservation_note"]
+    )
+    assert refused["isError"] is True and "Changes are not allowed" in result_text(refused)
+    assert loads == []
+
+
 async def test_with_two_connections_the_tools_need_the_name_and_only_use_approved_ones(
     client: httpx.AsyncClient, loads: list[str]
 ) -> None:
     ada = await seed_user("ada@example.test", role="staff")
-    first = await seed_connection("Beach houses")
-    second = await seed_connection("City flats")
+    first = await seed_connection("Beach houses", writes_enabled=True)
+    second = await seed_connection("City flats", writes_enabled=True)
     token, _ = await mint_token(ada, connections=(first, second))
     unclear = await call(client, token, "list_reservations")
     assert unclear["isError"] is True and loads == []
@@ -170,7 +197,7 @@ async def test_a_revoked_grant_is_refused(
     client: httpx.AsyncClient, loads: list[str], tool: str
 ) -> None:
     ada = await seed_user("ada@example.test", role="staff")
-    mine = await seed_connection("Beach houses")
+    mine = await seed_connection("Beach houses", writes_enabled=True)
     token, _ = await mint_token(ada, connections=(mine,), revoke_grant=True)
     response = await rpc(
         client, token, "tools/call", {"name": tool, "arguments": TOOL_ARGUMENTS[tool]}
@@ -182,7 +209,7 @@ async def test_a_revoked_grant_is_refused(
 
 async def test_a_disabled_person_is_refused(client: httpx.AsyncClient, loads: list[str]) -> None:
     ada = await seed_user("ada@example.test", role="staff")
-    mine = await seed_connection("Beach houses")
+    mine = await seed_connection("Beach houses", writes_enabled=True)
     token, _ = await mint_token(ada, connections=(mine,))
     await disable_user(ada)
     response = await rpc(

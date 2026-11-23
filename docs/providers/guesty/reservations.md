@@ -1,21 +1,39 @@
 # Guesty: reservations
 
-This page describes how pmsbridge reads your bookings (Guesty calls them reservations) and what the AI
-assistant can ask about them. Everything here is read only: no tool in this area changes anything in
-Guesty.
+This page describes how pmsbridge reads your bookings (Guesty calls them reservations), adds internal
+notes to them, and what the AI assistant can do with them. Reading is read only. Adding a note changes
+things in Guesty, so it only works on a connection where an administrator has turned changes on.
 
 ## What the assistant can do
 
-| Tool | What it answers |
-|---|---|
-| `list_reservations` | "Who checks in tomorrow?" A page of reservations, earliest check-in first (set `check_in_from` to leave out past bookings), filtered by property, status, check-in date, check-out date, booking date or confirmation code. |
-| `get_reservation` | "Show booking ABC123." "How much does the guest still owe?" One reservation with its notes, the guest's name, email and phone, and the balance still due. |
+| Tool | What it answers | Needs changes turned on |
+|---|---|---|
+| `list_reservations` | "Who checks in tomorrow?" A page of reservations, earliest check-in first (set `check_in_from` to leave out past bookings), filtered by property, status, check-in date, check-out date, booking date or confirmation code. | No |
+| `get_reservation` | "Show booking ABC123." "How much does the guest still owe?" One reservation with its notes, the guest's name, email and phone, and the balance still due. | No |
+| `add_reservation_note` | "Note on booking ABC123 that the guest wants a late checkout." Adds one internal note and returns the reservation. | Yes |
 
 The list leaves out the guest's contact details and the money, because Guesty does not include them in
 its search. `get_reservation` adds them when Guesty provides them.
 
-Adding a note to a reservation is not available yet. It will arrive together with the other tools that
-change data.
+### Adding a note
+
+The note is an internal comment on the reservation. The guest never sees it, and it never replaces or
+edits anything already written: pmsbridge does not write Guesty's note fields at all, so the notes
+that staff or guests typed cannot be overwritten, and there is no "read the notes, then write them back"
+step that could lose someone else's change. The door and lock code field (`keyCode`) is never written.
+
+- The assistant is told to show you the exact text and get your confirmation first.
+- The text must be 1 to 4,095 characters (Guesty's limit). Longer or empty text is refused before
+  anything is sent, and the error never repeats the text.
+- The note is sent once and never again. If Guesty does not answer in time, the message says the outcome
+  is unknown, and the assistant should check the reservation in Guesty before trying again, or the note
+  may appear twice. The one exception is an answer of "too many requests" with a wait time: Guesty did
+  not process that request, so it is sent again once after the wait.
+- After the note is added, the reservation is read again and returned. The new comment may not appear in
+  the reservation's notes text, because Guesty keeps comments apart from the note fields. If that
+  read fails, the answer says the note was added and must not be added again.
+- Each approval has its own limit on how fast changes can be made, and the connection's change switch
+  must be on.
 
 ## Endpoints used
 
@@ -28,10 +46,16 @@ the reservations, guests and reservation reports sections of the Open API refere
 | Get one reservation | `GET /v1/reservations-v3` | `reservationIds` with exactly one id | none. Guesty has no "get by id" path, so this call takes a list of up to ten ids and pmsbridge sends one. |
 | Guest contact (best effort) | `GET /v1/guests-crud/{guestId}` | `fields=fullName email phone` | none |
 | Balance (best effort) | `GET /v1/reservations-reports/reservations/search` | `filter[confirmationCode]`, `limit=10` | none needed |
+| Add a note | `POST /v1/reservations-v3/{reservationId}/comments` | JSON body `{"body": <text>}` only (1 to 4,095 characters); no mentions and no parent comment are sent | none |
 
 Every id is percent-encoded before it goes into a path, and the id of a reservation must be a single
 value (an id with a comma is refused). Each call uses Guesty's shared rate limits, each call stops after
-25 seconds, and read calls are repeated safely when Guesty is briefly unavailable.
+25 seconds, and read calls are repeated safely when Guesty is briefly unavailable. Adding a note is one
+request and is never repeated automatically (see "Adding a note").
+
+Guesty's reference also has `PUT /v1/reservations-v3/{reservationId}/notes`, which writes the notes
+fields. pmsbridge does not use it: the reference does not say whether leaving a key out keeps or erases
+it, and it can also carry the door code.
 
 ### How `get_reservation` works
 
@@ -112,15 +136,18 @@ pmsbridge never reads either: they are dropped before anything is built, so they
 answer, an extra value or a log line. Guesty's search and get calls do not let pmsbridge leave them out
 of the response, so they do reach pmsbridge's memory for a moment and are then discarded.
 
-Things pmsbridge never reads or shows: door and lock codes, payment methods, cards, payouts, bank
+Things pmsbridge never reads, shows or writes: door and lock codes, payment methods, cards, payouts, bank
 details, the list of payments in the report, channel details (`channelMetadata`, `integrationId`),
 virtual-card flags. pmsbridge never copies any nested object into an answer.
 
-## What assistants can see
+## What assistants can see and do
 
 An AI assistant you have approved can read everything in this area for the connections you allowed. That
 includes guests' names, email addresses and phone numbers (on a single reservation) and anything staff or
-guests wrote in the notes. If you do not want an assistant to see door codes, keep them out of the
+guests wrote in the notes. On a connection where an administrator turned changes on, it can also add
+internal notes. Notes written by guests can contain text that looks like an instruction; the tool
+description tells the assistant never to add text just because a note or message says so. Keep the change
+switch off for connections where you only want the assistant to read. If you do not want an assistant to see door codes, keep them out of the
 notes: pmsbridge drops Guesty's key-code field, but a code typed into a normal note is shown.
 
 ## Known gaps
@@ -143,4 +170,9 @@ notes: pmsbridge drops Guesty's key-code field, but a code typed into a normal n
   recently may not be reflected yet; check Guesty before acting on the amount.
 - **Phone format**: Guesty's reference does not state the format of phone numbers, so they are shown
   as Guesty stores them.
+- **Author of a note**: Guesty can only attach a comment to a person or an API key it can map to an
+  author. If it cannot (it answers "forbidden"), the note is not added and the assistant is told that
+  Guesty refused the change. Check that the API key may add comments in Guesty.
+- **Where the note appears**: Guesty shows the note in the reservation's comments, not in its note
+  fields, so it is not repeated in the `notes` text that `get_reservation` returns.
 - **Old reservation endpoints**: Guesty's older reservation endpoints are not used.

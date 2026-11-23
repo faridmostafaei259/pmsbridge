@@ -1,0 +1,6 @@
+{
+  "_id": "6a2000000000000000000c01",
+  "body": "Guest asked for a late checkout.",
+  "author": {"_id": "6a2000000000000000000d01", "fullName": "Invented Staffmember", "authorType": "open-api"},
+  "createdAt": "2027-02-01T10:00:00.000Z"
+}

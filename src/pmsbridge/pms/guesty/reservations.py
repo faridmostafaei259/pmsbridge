@@ -1,14 +1,20 @@
-"""Guesty reservations (read only): list and get, mapped to the canonical `Reservation`.
+"""Guesty reservations: list, get and add an internal note, mapped to the canonical `Reservation`.
 
 Endpoints (see docs/providers/guesty/reservations.md): `GET /reservations-v3/search` for lists,
 `GET /reservations-v3?reservationIds=` for one reservation (Guesty has no get-by-id path), then,
 best effort, `GET /guests-crud/{guestId}` for the guest's contact details and
 `GET /reservations-reports/reservations/search` for the balance still owed.
 
+Adding a note is one `POST /reservations-v3/{id}/comments`: an internal comment, which Guesty adds
+to the thread and never merges into the notes fields, so no existing note can be overwritten and
+there is no read-then-write race. It is sent once and never again (a 429 with Retry-After is the
+only exception, handled by the shared client). The guest never sees it. The reservation is
+read again afterwards to return it.
+
 Nothing is copied through except the fields mapped below. Door and lock codes (`notes.keyCode`),
 the author of a note (`notes.doneBy`), payment methods, cards, payouts and channel metadata are
-never read. Guest names, contact details and notes are never logged. Shared helpers are in
-`common.py`.
+never read, and `keyCode` is never written. Guest names, contact details and notes are never
+logged. Shared helpers are in `common.py`.
 """
 
 import logging
@@ -19,12 +25,11 @@ from pydantic import ValidationError
 
 from pmsbridge.pms.base import (
     Capability,
-    CapabilityNotSupportedError,
     PMSError,
     PMSNotFoundError,
     PMSUpstreamError,
     PMSValidationError,
-    Provider,
+    remaining_seconds,
 )
 from pmsbridge.pms.guesty.client import GuestyClient
 from pmsbridge.pms.guesty.common import (
@@ -55,7 +60,7 @@ from pmsbridge.pms.models import (
 
 logger = logging.getLogger(__name__)
 
-CAPABILITIES: Final = frozenset({Capability.RESERVATIONS_READ})
+CAPABILITIES: Final = frozenset({Capability.RESERVATIONS_READ, Capability.RESERVATIONS_ADD_NOTE})
 
 # Guesty status -> canonical status. Anything else is UNKNOWN (the raw value goes to extras).
 STATUS_FROM_GUESTY: Final[dict[str, ReservationStatus]] = {
@@ -87,6 +92,9 @@ SEARCH_PATH: Final = "/reservations-v3/search"
 BY_IDS_PATH: Final = "/reservations-v3"
 REPORTS_PATH: Final = "/reservations-reports/reservations/search"
 GUEST_FIELDS: Final = "fullName email phone"
+# Guesty accepts a comment of 1 to 4095 characters. The canonical note may be longer.
+MAX_COMMENT_LENGTH: Final = 4095
+MIN_SECONDS_PER_WRITE: Final = 2.0
 REPORT_LIMIT: Final = 10
 MAX_STAYS: Final = 50
 # Notes keys that are shown, in this order, with their label. `keyCode` and `doneBy` are not here
@@ -303,11 +311,39 @@ class GuestyReservations:
         return Page[Reservation](items=items, next_cursor=next_cursor, total=None)
 
     async def get_reservation(self, reservation_id: str) -> Reservation:
-        wanted = reservation_id.strip()
-        quote_id(wanted)  # length and emptiness check; the id itself goes in as a query value
-        if "," in wanted:
-            # Guesty reads a comma as a list of ids, and exactly one is wanted.
-            raise PMSValidationError("The id is not valid.")
+        wanted = _checked_id(reservation_id)
+        reservation = await self._fetch(wanted)
+        guest = await self._guest(wanted, reservation.guest_id)
+        balance = await self._balance(wanted, reservation.confirmation_code)
+        return reservation.model_copy(update={"guest": guest, "balance_due": balance})
+
+    async def add_reservation_note(self, note: ReservationNote) -> Reservation:
+        wanted = _checked_id(note.reservation_id)
+        text = note.note.strip()
+        if not text:
+            raise PMSValidationError("The note is empty, so nothing was added.")
+        if len(text) > MAX_COMMENT_LENGTH:
+            raise PMSValidationError(
+                f"The note is longer than {MAX_COMMENT_LENGTH} characters, so nothing was added."
+            )
+        left = remaining_seconds()
+        if left is not None and left < MIN_SECONDS_PER_WRITE:
+            raise PMSUpstreamError("Nothing was added: the time allowed ran out. Try again.")
+        # One request, never sent again. Only the text goes in: no mention, no parent comment.
+        await self._client.request(
+            "POST", f"{BY_IDS_PATH}/{quote_id(wanted)}/comments", json_body={"body": text}
+        )
+        try:
+            return await self._fetch(wanted)
+        except PMSError as exc:
+            _skipped("note read-back", wanted, exc)
+            raise PMSUpstreamError(
+                "The note was added to the reservation, but the reservation could not be read "
+                "back afterwards. Do not add the note again."
+            ) from None
+
+    async def _fetch(self, wanted: str) -> Reservation:
+        """One reservation by id, from the by-ids read (no guest contact, no balance)."""
         response = await self._client.request("GET", BY_IDS_PATH, params={"reservationIds": wanted})
         found, _ = _results(response.json())  # a bare array, or an object with `results`
         raw = next((e for e in found if _id_of(as_dict(e)) == wanted), None)
@@ -316,12 +352,7 @@ class GuestyReservations:
         reservation = map_reservation(raw)
         if reservation is None:
             raise PMSUpstreamError("Guesty returned a reservation that could not be understood.")
-        guest = await self._guest(wanted, reservation.guest_id)
-        balance = await self._balance(wanted, reservation.confirmation_code)
-        return reservation.model_copy(update={"guest": guest, "balance_due": balance})
-
-    async def add_reservation_note(self, note: ReservationNote) -> Reservation:
-        raise CapabilityNotSupportedError(Provider.GUESTY, Capability.RESERVATIONS_ADD_NOTE)
+        return reservation
 
     async def _guest(self, reservation_id: str, guest_id: str | None) -> GuestSummary | None:
         """Name, email and phone from the guest record; None when it cannot be had."""
@@ -363,6 +394,16 @@ class GuestyReservations:
         except (PMSError, ValidationError) as exc:
             _skipped("balance", reservation_id, exc)
             return None
+
+
+def _checked_id(reservation_id: str) -> str:
+    """A reservation id fit for a query value or a path segment (one id, never a list)."""
+    wanted = reservation_id.strip()
+    quote_id(wanted)  # length and emptiness check
+    if "," in wanted:
+        # Guesty reads a comma as a list of ids, and exactly one is wanted.
+        raise PMSValidationError("The id is not valid.")
+    return wanted
 
 
 def _skipped(what: str, reservation_id: str, exc: Exception) -> None:
