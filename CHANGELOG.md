@@ -40,6 +40,14 @@ All notable changes to this project are documented here. The format follows
 - `oauth revoke-ai-access` administrator command (by person, by assistant, or everything with `--yes`); prints counts only.
 - OAuth Client ID Metadata Documents: an AI assistant can identify itself with an https web address; pmsbridge downloads and validates the assistant's details for a signed-in person, shows the verified host on the approval page, and advertises support in the authorization server metadata. Registration still works.
 - `oauth revoke-ai-access --client` accepts an assistant's web address as well as its client id.
+- PMS connection storage: connections with encrypted credentials and cached tokens, and a unique key digest so one Guesty key cannot be added twice (new database migration).
+- A shared PMS HTTP client with timeouts, safe retries (reads only), `Retry-After` handling within the call deadline, request path checks, a circuit breaker, and per-account request limits that follow the PMS's rate-limit headers.
+- A Guesty token manager that keeps one token per connection, renews it once and early without holding a database transaction, pauses after a failed token request, and tracks Guesty's 5-tokens-per-24-hours budget.
+- A provider registry and a Guesty provider shell that picks up the domain modules that exist.
+- Guesty provider guide.
+
+### Changed
+- Request log lines from the HTTP libraries are no longer written at INFO, so query strings stay out of the logs.
 
 ### Fixed
 - Newly registered assistants never get a client id that starts with a minus sign, which the `--client` option of `oauth revoke-ai-access` could not accept; `--client=<id>` also works for older ids.

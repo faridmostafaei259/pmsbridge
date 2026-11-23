@@ -8,6 +8,8 @@ nav:
   - Home: index.md
   - TLS and domains: tls-and-domains.md
   - Admin guide: admin-guide.md
+  - Providers:
+      - Guesty: providers/guesty/index.md
   - Configuration: configuration.md
   - Architecture: architecture.md
   - Security model: security/threat-model.md

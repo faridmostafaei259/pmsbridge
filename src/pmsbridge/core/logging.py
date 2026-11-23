@@ -386,3 +386,6 @@ def configure_logging(settings: Settings) -> None:
         existing.close()
     root.addHandler(handler)
     root.setLevel(settings.log_level)
+    # These log every request line, including the query string, at INFO.
+    for noisy in ("httpx", "httpcore"):
+        logging.getLogger(noisy).setLevel(logging.WARNING)
