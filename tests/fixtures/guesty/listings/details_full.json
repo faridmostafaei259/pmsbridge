@@ -1,0 +1,29 @@
+{
+  "_id": "6a1f00000000000000000001",
+  "publicDescription": {
+    "summary": "A bright loft by the harbour.",
+    "space": "Open plan living area and two bedrooms.",
+    "interactionWithGuests": "Host is available by message.",
+    "houseRules": "No parties.",
+    "notes": "Quiet building.",
+    "somethingNew": "Extra text under an unknown key.",
+    "nested": {"deep": "not read"}
+  },
+  "privateDescription": {"notes": "Staff note: spare key is with the neighbour."},
+  "amenities": ["Wifi", "Kitchen", "", 7, "Heating"],
+  "amenitiesNotIncluded": ["Pool"],
+  "checkInInstructions": {
+    "primaryCheckIn": "DOOR_CODE",
+    "alternativeCheckIn": "LOCK_BOX",
+    "notes": "Use the side entrance.",
+    "pictureUrls": ["https://images.example.test/entry.jpg"]
+  },
+  "customFields": {
+    "fieldA": "plain text",
+    "fieldB": 12,
+    "fieldC": true,
+    "fieldD": {"nested": "dropped"},
+    "fieldE": ["dropped"],
+    "fieldF": null
+  }
+}

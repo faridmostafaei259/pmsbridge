@@ -1,0 +1,37 @@
+{
+  "_id": "6a1f00000000000000000001",
+  "title": "Harbour View Loft",
+  "nickname": "Loft",
+  "active": true,
+  "isListed": true,
+  "isVirtual": false,
+  "isTest": false,
+  "propertyType": "Apartment",
+  "roomType": "Entire home/apartment",
+  "address": {
+    "full": "12 Example Quay, Testville, Exampleland",
+    "street": "12 Example Quay",
+    "city": "Testville",
+    "country": "Exampleland",
+    "lat": 12.5,
+    "lng": -45.25
+  },
+  "bedrooms": 2,
+  "accommodates": 5,
+  "timezone": "Europe/Paris",
+  "prices": {"basePrice": 149.5, "currency": "EUR", "cleaningFee": 40},
+  "defaultCheckInTime": "15:00",
+  "defaultCheckOutTime": "11:00",
+  "tags": ["harbour", "loft"],
+  "terms": {"minNights": 2, "maxNights": 30},
+  "cleaningStatus": {"value": "clean", "updatedAt": "2026-01-01T10:00:00.000Z"},
+  "integrations": [
+    {
+      "platform": "fakechannel",
+      "active": true,
+      "id": "6a1f0000000000000000beef",
+      "fakechannel": {"accessToken": "fake-channel-access-token-do-not-leak", "secret": "fake-channel-secret"}
+    }
+  ],
+  "owners": [{"_id": "6a1f0000000000000000cafe", "note": "fake owner reference"}]
+}

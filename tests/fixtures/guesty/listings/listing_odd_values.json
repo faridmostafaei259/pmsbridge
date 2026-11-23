@@ -1,0 +1,11 @@
+{
+  "_id": "6a1f00000000000000000003",
+  "title": "   ",
+  "active": "yes",
+  "address": {"street": "5 Sample Road", "lat": 400, "lng": "north"},
+  "bedrooms": -1,
+  "accommodates": 3.0,
+  "prices": {"basePrice": 90, "currency": "euro"},
+  "tags": ["one", 2, "", null, "two"],
+  "terms": "none"
+}

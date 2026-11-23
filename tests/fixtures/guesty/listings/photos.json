@@ -1,0 +1,8 @@
+[
+  {"_id": "6a1f0000000000000000a003", "original": "https://images.example.test/c.jpg", "thumbnail": "https://images.example.test/c_t.jpg", "caption": "Third", "index": 2},
+  {"_id": "6a1f0000000000000000a001", "original": "https://images.example.test/a.jpg", "thumbnail": "https://images.example.test/a_t.jpg", "caption": "First", "index": 0, "source": "upload"},
+  {"_id": "6a1f0000000000000000a002", "original": "https://images.example.test/b.jpg", "index": 1},
+  {"_id": "6a1f0000000000000000a004", "original": "javascript:alert(1)", "index": 3},
+  {"original": "https://images.example.test/noid.jpg", "index": 4},
+  "bad item"
+]

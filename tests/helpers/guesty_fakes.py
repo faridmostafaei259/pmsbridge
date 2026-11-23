@@ -16,7 +16,7 @@ import respx
 
 from pmsbridge.pms.guesty.auth import TOKEN_URL
 
-FIXTURES = Path(__file__).resolve().parents[3] / "fixtures" / "guesty" / "auth"
+FIXTURES = Path(__file__).resolve().parents[1] / "fixtures" / "guesty" / "auth"
 DAY_SECONDS = 86400
 
 

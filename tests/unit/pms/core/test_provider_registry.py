@@ -25,6 +25,7 @@ from pmsbridge.pms.guesty.provider import (
     GuestyProvider,
     build_provider,
     discover_domains,
+    reset_discovery,
 )
 from pmsbridge.pms.registry import load_provider
 
@@ -34,13 +35,23 @@ CREDENTIALS = {"client_id": CLIENT_ID, "client_secret": "s"}
 
 @pytest.fixture
 def extra_modules(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[Path]:
-    """A folder searched for `pmsbridge.pms.guesty.<domain>` modules, cleaned up afterwards."""
-    monkeypatch.setattr(guesty_package, "__path__", [*guesty_package.__path__, str(tmp_path)])
+    """The only folder searched for `pmsbridge.pms.guesty.<domain>` modules during the test.
+
+    The real domain modules are hidden, so these tests do not depend on which domains exist.
+    Everything is restored afterwards.
+    """
+    monkeypatch.setattr(guesty_package, "__path__", [str(tmp_path)])
+    for name in DOMAIN_MODULES:
+        monkeypatch.delitem(sys.modules, f"pmsbridge.pms.guesty.{name}", raising=False)
+        monkeypatch.delattr(guesty_package, name, raising=False)
+    reset_discovery()
+    before = set(vars(guesty_package))
     yield tmp_path
     for name in DOMAIN_MODULES:
         sys.modules.pop(f"pmsbridge.pms.guesty.{name}", None)
-        if hasattr(guesty_package, name):
-            monkeypatch.delattr(guesty_package, name, raising=False)
+    for name in set(vars(guesty_package)) - before:
+        vars(guesty_package).pop(name, None)
+    reset_discovery()
 
 
 def write_module(folder: Path, name: str, body: str) -> None:
@@ -61,7 +72,7 @@ LISTINGS_MODULE = """
 """
 
 
-def test_with_no_domain_modules_the_provider_has_no_capabilities() -> None:
+def test_with_no_domain_modules_the_provider_has_no_capabilities(extra_modules: Path) -> None:
     provider = build_provider(REF, CREDENTIALS, None)
     assert provider.capabilities == frozenset()
     for attribute in (

@@ -13,6 +13,7 @@ from fastapi import FastAPI
 from mcp.server.mcpserver import MCPServer
 
 import pmsbridge.mcp.tools as tools_package
+import pmsbridge.mcp.tools.connections  # noqa: F401  (kept loaded while other modules are hidden)
 from pmsbridge.app import create_app
 from pmsbridge.mcp.server import TOOL_DOMAINS, build_server, load_tool_modules, tool_module_names
 
@@ -22,13 +23,24 @@ PREFIX = "pmsbridge.mcp.tools."
 
 @pytest.fixture
 def extra_modules(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[Path]:
-    """A folder searched for `pmsbridge.mcp.tools.<name>` modules, cleaned up afterwards."""
-    monkeypatch.setattr(tools_package, "__path__", [*tools_package.__path__, str(tmp_path)])
+    """The only folder searched for new `pmsbridge.mcp.tools.<name>` modules during the test.
+
+    Real tool modules other than `connections` are hidden, so these tests do not depend on which
+    domains exist. Everything is restored afterwards.
+    """
+    monkeypatch.setattr(tools_package, "__path__", [str(tmp_path)])
+    for name in list(sys.modules):
+        if name.startswith(PREFIX) and name != PREFIX + "connections":
+            monkeypatch.delitem(sys.modules, name, raising=False)
+            monkeypatch.delattr(tools_package, name.removeprefix(PREFIX), raising=False)
     importlib.invalidate_caches()
+    before = set(vars(tools_package))
     yield tmp_path
     for name in list(sys.modules):
         if name.startswith(PREFIX) and name != PREFIX + "connections":
             sys.modules.pop(name, None)
+    for name in set(vars(tools_package)) - before:
+        vars(tools_package).pop(name, None)
 
 
 def write(folder: Path, name: str, body: str) -> None:
@@ -50,7 +62,7 @@ async def names(server: MCPServer) -> list[str]:
 
 async def test_a_module_that_does_not_exist_yet_is_skipped() -> None:
     server = MCPServer("test")
-    assert load_tool_modules(server, [PREFIX + "listings", PREFIX + "connections"]) == [
+    assert load_tool_modules(server, [PREFIX + "not_a_real_domain", PREFIX + "connections"]) == [
         PREFIX + "connections"
     ]
     assert await names(server) == ["list_connections"]

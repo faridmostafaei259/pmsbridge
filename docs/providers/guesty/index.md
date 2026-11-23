@@ -83,7 +83,11 @@ changes: the AI assistant is told that nothing was changed and that it can try a
 
 ## Endpoints used
 
-Each feature lists here the Guesty endpoints it calls. The token endpoint is the first:
+Each feature has its own page with the Guesty endpoints it calls and how their data is used:
+
+- [Listings, listing details and photos](listings.md)
+
+pmsbridge itself also calls these, for every feature:
 
 | Purpose | Endpoint | Documentation |
 |---|---|---|

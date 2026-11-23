@@ -12,7 +12,9 @@ nav:
   - Tools: tools.md
   - Admin guide: admin-guide.md
   - Providers:
-      - Guesty: providers/guesty/index.md
+      - Guesty:
+          - Overview: providers/guesty/index.md
+          - Listings: providers/guesty/listings.md
   - Configuration: configuration.md
   - Architecture: architecture.md
   - Security model: security/threat-model.md

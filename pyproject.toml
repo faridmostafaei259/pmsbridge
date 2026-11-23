@@ -59,6 +59,7 @@ pythonVersion = "3.12"
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
 testpaths = ["tests"]
+pythonpath = ["tests/helpers"]
 addopts = "-ra --strict-markers"
 
 [dependency-groups]

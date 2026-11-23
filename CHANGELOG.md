@@ -53,6 +53,7 @@ All notable changes to this project are documented here. The format follows
 - `list_connections` tool and the framework every tool uses: per-call checks against the person's approval, connections that are turned off or need attention are refused, tools that change data stay off until an administrator allows changes on the connection, a 25-second limit per call, safe error messages, bounded results and read-only or changes-data markers for AI assistants.
 - A record of every AI assistant tool call (person, assistant, connection, tool, outcome, time taken; never request details, personal data or tokens), deleted after `AUDIT_RETENTION_DAYS` (90 by default). New database migration.
 - Generated tool reference and a guide for connecting an AI assistant.
+- Guesty listings (read only): `list_listings`, `get_listing`, `get_listing_details` and `list_listing_photos` let an AI assistant list properties, look one up, read its descriptions, amenities and check-in instructions, and see its photos. Guesty's staff-only listing text is never read.
 
 ### Changed
 - Replacing a connection's credentials keeps its id, so approved AI assistants keep working, and returns a connection that needed attention to working.

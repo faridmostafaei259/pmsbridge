@@ -17,6 +17,32 @@ example `guesty_`) only work with connections to that system.
 - Lists are limited in size, and every call stops after 25 seconds.
 - Tool names, parameters and results are only ever added to in updates, never renamed or removed.
 
+## `get_listing`
+
+**Read only.**
+
+Get one property (listing) by its id.
+
+Returns its name, address, bedrooms, guest capacity, base price, time zone and check-in and check-out times. Fails with a clear message if the listing does not exist.
+
+| Argument | Type | Required | Description |
+|---|---|---|---|
+| `listing_id` | string | yes | The listing id from list_listings. |
+| `connection` | string (optional) | no | The connection to use: its name or id as shown by list_connections. Optional when only one connection is available. |
+
+## `get_listing_details`
+
+**Read only.**
+
+Get the full content of one property: descriptions, amenities and check-in instructions.
+
+Returns the listing's descriptions, the amenities it has and does not have, how guests check in, and its custom fields, where the property management system has them.
+
+| Argument | Type | Required | Description |
+|---|---|---|---|
+| `listing_id` | string | yes | The listing id from list_listings. |
+| `connection` | string (optional) | no | The connection to use: its name or id as shown by list_connections. Optional when only one connection is available. |
+
 ## `list_connections`
 
 **Read only.**
@@ -26,3 +52,32 @@ List the property management connections this AI assistant may use.
 Call this first when you do not know which connection to use. Every other tool takes an optional `connection` argument (a label or id from this list); it can be left out when exactly one connection is available. Only connections the person allowed for this assistant are shown.
 
 This tool takes no arguments.
+
+## `list_listing_photos`
+
+**Read only.**
+
+List the photos of one property in display order.
+
+Each photo has an image address, a thumbnail address, a caption and its position. At most 200 photos are returned.
+
+| Argument | Type | Required | Description |
+|---|---|---|---|
+| `listing_id` | string | yes | The listing id from list_listings. |
+| `connection` | string (optional) | no | The connection to use: its name or id as shown by list_connections. Optional when only one connection is available. |
+
+## `list_listings`
+
+**Read only.**
+
+List the properties (listings) in the property management system.
+
+Returns a page of listings with name, address, bedrooms, guest capacity, base price and check-in times. When next_cursor is set there are more; pass it back as cursor. Use get_listing for one property or get_listing_details for its descriptions and amenities.
+
+| Argument | Type | Required | Description |
+|---|---|---|---|
+| `search` | string (optional) | no | Text to look for in the listing title, address or internal note. Omit for all. |
+| `active_only` | boolean | no | Only active listings. Use false to also ask for inactive ones (the property management system may still hide some). |
+| `limit` | integer (optional) | no | How many listings to return (1 to 100). |
+| `cursor` | string (optional) | no | The next_cursor of the previous result, to get the next page. |
+| `connection` | string (optional) | no | The connection to use: its name or id as shown by list_connections. Optional when only one connection is available. |
