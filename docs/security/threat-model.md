@@ -5,8 +5,10 @@ reach it, where the trust boundaries are, and which controls exist. Every contro
 **Implemented** (present in the code today and tested) or **Planned** (a later milestone owns it).
 
 Status: foundation milestone (container image, Docker Compose stack with Caddy, settings, logging,
-SQLite storage and migrations, encryption vault, key rotation commands). There are no user accounts,
-OAuth endpoints, PMS connections or MCP tools yet, so the controls for those are all marked Planned.
+SQLite storage and migrations, encryption vault, key rotation commands) plus the accounts and OAuth
+milestone (dashboard sign-in, two-factor, invitations, user management, the OAuth authorization server
+with the token endpoint, connected-apps pages and the assistant web-address fetch). There are no PMS
+connections or MCP tools yet, so the controls for those are marked Planned.
 
 ## Assets
 
@@ -21,14 +23,19 @@ OAuth endpoints, PMS connections or MCP tools yet, so the controls for those are
 | PMS credentials (Guesty client ID and secret, Hostaway account ID and API key) and cached PMS tokens | Not stored yet. They will live in encrypted database columns | Planned: PMS connections milestone. |
 | Guest personal data and reservation details returned by the PMS | Not handled yet | Planned: never logged, never stored beyond short-lived caches. |
 | The ability to change PMS data (prices, guest messages, review replies, tasks) | Not available yet | Planned: write tools off by default. |
-| OAuth signing keys, refresh tokens, user passwords and session cookies | Not available yet | Planned: accounts and OAuth milestones. |
+| User passwords, session cookies, one-time links, authenticator secrets and recovery codes, OAuth authorization codes, access and refresh tokens, client secrets | The SQLite database | Passwords are argon2id hashes; sessions, links, codes, tokens and client secrets are stored only as SHA-256 hashes of 256-bit random values (96 bits for recovery codes); authenticator secrets are encrypted with the vault. OAuth tokens are opaque, so there are no signing keys (ADR 0011). |
 | Full backup archives made by `pmsbridge backup` | Not available yet | Planned: packaging milestone. They will contain both the database and `.env`, so an unencrypted archive exposes the key together with the encrypted data. |
 
 ## Entry points
 
 - **Public HTTPS (port 443) and the HTTP redirect (port 80)**, served by Caddy. Only these two ports are
-  published. Today the application answers `/healthz` (a fixed `{"status":"ok"}`) and 404 for everything
-  else. `/readyz` is answered with 404 by Caddy and never reaches the application.
+  published. The application answers `/healthz` (a fixed `{"status":"ok"}`), the dashboard (sign-in,
+  one-time link pages, two-factor, administrator and connected-apps pages, all behind a session except
+  sign-in and the link pages), the OAuth endpoints (`/.well-known/oauth-*` discovery documents,
+  `/oauth/register`, `/oauth/authorize`, `/oauth/token`, `/oauth/revoke`; the registration, token and
+  revocation endpoints are reachable by anyone and are rate limited) and 404 for everything else.
+  `/readyz` is answered with 404 by Caddy and never reaches the application. The MCP endpoint does not
+  exist yet.
 - **The private backend network** shared by Caddy and the app. Nothing else is attached to it. The app
   listens on port 8000 on this network. That port is not published on the server's network cards, but on
   a Linux server the Docker host itself can reach the app's bridge address directly, so anyone with a shell
@@ -84,7 +91,7 @@ Operator / Docker host  ------------------------------> everything above (full t
 | Second-factor secrets | Authenticator secrets are encrypted with the vault and bound to the user; recovery codes are stored only as hashes and work once; the enrollment page is not cached and runs no scripts | Implemented |
 | Invitation links | Hash-only, single use, 72-hour expiry, reissuing replaces the link and ends open flows; the token travels in a query string and leaves the address bar on the first request; an invited administrator must confirm two-factor sign-in before the account is active | Implemented |
 | User management by a hijacked administrator session | Administrator-only pages with CSRF and Origin checks; inviting, disabling, enabling, resetting two-factor and changing roles need the password and a current code confirmed within 10 minutes (wrong attempts share the code limits); administrators cannot lock themselves out and the last active administrator cannot be disabled or demoted; disabling, resetting two-factor and promoting sign the person out everywhere. The confirmation lives in memory, is tied to the session and covers any of these actions for 10 minutes; cancelling a pending invitation needs no confirmation (it only removes an account that was never activated) | Implemented |
-| Administrator who lost the authenticator and all recovery codes | `users reset-2fa` on the server resets two-factor sign-in (audited); anyone able to run it already controls the server | Implemented |
+| Administrator who lost the authenticator and all recovery codes | `users reset-2fa` on the server resets two-factor sign-in (audited); anyone able to run it already controls the server. The commands exist as modules (`pmsbridge.admin.users`, `pmsbridge.admin.oauth`); the `python -m pmsbridge.admin` entry point that runs them arrives with the packaging milestone | Implemented (command); Planned (entry point) |
 | Open redirect or code theft through the authorization endpoint | Exact redirect matching (for loopback IP addresses only the port may differ, per RFC 8252); no redirect before the client and redirect address are validated, and no automatic redirect at all before the person has signed in and acted on the consent screen (request errors show a page naming the return host); the consent page allows form submission only to the exact redirect origin; the consent form re-validates every field and needs CSRF, Origin and a session | Implemented |
 | Abuse of client registration (filling the database, lookalike names) | JSON only with a 16 KiB cap, per-address and global rate limits, unused registrations expire; the assistant's name is shown escaped and marked unverified, and the return address host is shown prominently with a warning for localhost | Implemented |
 | Authorization code interception or replay | PKCE with S256 only, exact redirect binding, codes last 5 minutes, work once and are stored as hashes; a code is spent only when the client, return address and verifier match; replaying a code revokes its approval | Implemented |
@@ -107,7 +114,7 @@ Operator / Docker host  ------------------------------> everything above (full t
 | Abuse case | Control | Status |
 |---|---|---|
 | A visitor forges `X-Forwarded-For` or `X-Forwarded-Proto` to hide their address or fake HTTPS | Caddy replaces the headers; the app accepts them only from Caddy's address. Another container or the host sending the headers is ignored | Implemented |
-| A visitor forges a `Host` header to poison links or redirects | Caddy routes only `DOMAIN` to the app. Issuer and resource URLs will come from `PUBLIC_BASE_URL`, never from request headers | Implemented (routing); Planned (OAuth URLs) |
+| A visitor forges a `Host` header to poison links or redirects | Caddy routes only `DOMAIN` to the app. The issuer, resource and every OAuth and CSRF address come from `PUBLIC_BASE_URL`, never from request headers (a forged `Host` sent straight to the app changes nothing in the discovery documents) | Implemented |
 | Oversized or malformed requests, request smuggling | 2 MB body cap; Caddy rejects conflicting length headers and malformed requests; connections that never complete a request are closed by the proxy | Implemented |
 | Information leakage through errors, headers or docs pages | Fixed error bodies, no framework or server banner on application responses, no API docs, `/readyz` hidden | Implemented |
 | Sensitive data in logs | Redaction by key name and by pattern; the encryption key is also recognised by its shape; startup errors never repeat setting values | Implemented |
@@ -123,9 +130,9 @@ Operator / Docker host  ------------------------------> everything above (full t
 | Unwanted changes to PMS data | Write actions off by default, enabled per connection by an admin, audited | Planned |
 | Exhausting the Guesty token budget (5 per 24 hours) | Single locked refresh path, persistent token cache, budget tracking | Planned |
 | Brute-force login | argon2id, rate limiting, two-factor auth required for admins. Rate limits must not rely on the client address alone, because all IPv6 visitors currently appear as one address (see accepted risks) | Implemented: sign-in rate limits counted before the password check; two-factor sign-in (required for administrators) with wrong codes limited to 5 per 15 minutes and 20 per 24 hours per person, and each code step accepted once; addresses keyed per IPv6 /64 once dual-stack exists, today all IPv6 visitors share one address (see accepted risks) |
-| Server-side request forgery | PMS base URLs are fixed in code and never user-controlled | Planned |
+| Server-side request forgery | Assistant web addresses: guarded fetch (see Controls). PMS base URLs are fixed in code and never user-controlled | Implemented (assistant addresses); Planned (PMS) |
 | Prompt injection through PMS content (a guest message, review or note tells the AI to send messages or change prices) | Write actions off by default and enabled per connection; write tools marked destructive so AI clients ask for confirmation; bounded calendar updates; every write audited | Planned |
-| Malicious client registration or consent phishing (lookalike app names, attacker redirect URIs, flooding the registration endpoint) | Consent screen shows the client name and redirect host; exact redirect URI matching; registration rate limits; unused registrations expire | Planned |
+| Malicious client registration or consent phishing (lookalike app names, attacker redirect URIs, flooding the registration endpoint) | Consent screen shows the client name (escaped, marked unverified) and the redirect host, with a warning for loopback addresses; exact redirect URI matching; registration rate limits; unused registrations expire. A lookalike name with the attacker's own return address cannot be stopped technically: the person sees the host and decides (see accepted risks) | Implemented |
 | Tampered pagination cursors | Cursors are opaque, never contain URLs or hosts, are parsed strictly and rejected when malformed | Planned |
 | Duplicate actions after timeouts (message sent twice) | Write operations are never retried automatically; unknown outcomes are reported to the client | Planned |
 | Compression side channels (BREACH) once the dashboard shows secrets next to reflected input | Caddy does not compress responses at all, and CSRF tokens are also masked with a fresh random value per response | Implemented |
@@ -142,9 +149,12 @@ gap is fixed.
 | The app port is reachable from the Docker host and from any container on the backend network. Traffic sent that way skips Caddy, so it skips the hidden `/readyz` (it answers with the check names), TLS and the `Host` routing. Forwarded headers on such traffic are ignored | Someone with a shell on the server (already root-equivalent through Docker) can read `/readyz` (check names only). A compromised container on the backend network could do the same; only the two project containers are attached | Accepted; the application enforces its own 2 MiB body limit and ignores forwarded headers from such traffic |
 | Sign-in rate limits live in memory | A restart clears the counters, and anyone who knows an e-mail address can lock that account out of password sign-in for 5 minutes by failing on purpose | Accepted: limits are short, documented in the admin guide, and two-factor sign-in (required for administrators) adds a second factor |
 | Second-factor guessing budget and lockout | A correct password alone does not give a session. Wrong codes are limited per person to 5 per 15 minutes and 20 per 24 hours (counted before checking, so simultaneous guesses count); with 3 valid codes out of a million at any time, that is at most about 0.006% per day. The limits live in memory and reset on restart, and someone who knows a password can lock that person out of the code step for up to 24 hours | Accepted: knowing the password is already required; recovery codes share the same limits |
-| Someone using many addresses can use up the installation-wide limit of 30 client registrations per hour | New AI assistants cannot register for up to an hour; assistants already registered keep working | Accepted |
+| Someone using many addresses can use up the installation-wide limit of 30 client registrations per hour (malformed requests count too, and visitors that arrive from a private or internal address have no per-address limit, only the installation-wide one) | New AI assistants cannot register for up to an hour; assistants already registered keep working, and assistants that identify themselves by web address do not need to register | Accepted |
 | Someone who knows a confidential assistant's client id can lock that assistant out of the token endpoint for 5 minutes by sending wrong secrets | The assistant cannot get or refresh tokens for a few minutes | Accepted: the limit is what stops secret guessing; public assistants are never affected |
-| A signed-in person can use up a host's metadata fetch allowance (5 per hour) with other addresses on the same host | New approvals for assistants on that host are delayed for up to an hour; existing approvals and stored copies keep working | Accepted |
+| A signed-in person can use up a host's metadata fetch allowance (5 per hour) with other addresses on the same host. A link to the authorization endpoint with a web-address client id also makes the server fetch on behalf of whoever opens it while signed in, using that person's allowance of 10 per hour | New approvals for assistants on that host, or for that person, are delayed for up to an hour; existing approvals and stored copies keep working. Only public https hosts can be fetched, and nothing from a failed response is used or shown | Accepted |
+| Consent phishing: someone registers an assistant with a trusted-looking name and their own return address and sends a person the authorization link | The person is asked to approve access for an assistant that is not the one they think it is; a mistaken approval hands the code to the attacker's address, which also needs the PKCE verifier the attacker chose | Accepted: the consent page escapes the name, marks it unverified and shows the return host in large type with a warning for loopback addresses; approvals can be cancelled on the connected-apps page and by `oauth revoke-ai-access`; web-address identities show a verified host |
+| The e-mail address check is permissive: it accepts addresses that contain characters such as `<`, `>` or quotes (`<b>@x.test` is accepted by the invite form) | Pages are rendered with automatic escaping (checked on the users page and the sign-in page), and the application sends no mail, so there is no known way to use this | Open, low priority |
+| Revoked approvals stay in the database until their assistant is deleted (unused registrations after 24 hours, others after 90 idle days), and expired codes, tokens and sessions are deleted only when a later request of the same kind runs | The database grows slowly with use; nothing secret is exposed because all stored values are hashes | Open, low priority |
 | All IPv6 visitors currently reach the app from one internal address (the backend network is IPv4-only), so they share one per-address sign-in count | Repeated failed sign-ins from one IPv6 visitor could pause password sign-in for other IPv6 visitors | Mitigated: private and internal addresses get a much higher per-address limit (the per-e-mail limit still applies to every account); removed when the backend becomes dual-stack in a later release |
 | The backend network is IPv4-only. IPv6 visitors reach Caddy through Docker's proxy, so the app sees them all as the bridge gateway address | The client address is not unique for IPv6 visitors; IP-based limits would lump them together | Accepted for now; a dual-stack option is planned |
 | The backend network is not marked internal, so both containers have outbound access (the app needs the PMS APIs, Caddy needs the certificate authority) | A compromised app could reach other hosts, including a cloud provider's metadata address | Accepted: outbound HTTPS to public hosts is needed for assistant metadata documents, so egress cannot be limited to the PMS hosts; the metadata fetch refuses private, loopback, link-local and metadata addresses |
@@ -168,7 +178,9 @@ gap is fixed.
   documentation freshness, and a compose smoke test of the edge (headers, redirect, hidden readiness).
 - Security regression tests that need no running stack are in `tests/security`: hostile ciphertext,
   secrets pushed through logging, forged forwarded headers, hostile database files, deployment
-  invariants, and the known gaps listed above.
+  invariants, the known gaps listed above, and the attacks on accounts and OAuth (open redirects,
+  cross-site posts, lockout, redirect address and PKCE tricks, code and refresh-token replay, tokens
+  that must die with their person, hostile assistant addresses, staff against administrator pages).
 - At the end of each milestone: static analysis (bandit, semgrep), secret scanning over the full
   history (gitleaks), image scans, a license check, and hands-on attacks against a running stack. Their
   findings are fixed or listed above.
