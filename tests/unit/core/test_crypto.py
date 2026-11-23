@@ -228,7 +228,8 @@ async def test_status_and_reencrypt_move_everything_to_the_active_key(
     vault = make_vault(new, old)
 
     before = await admin_keys.key_status(vault)
-    assert before.fields[0].by_key == {"old": 5}
+    by_name = {item.name: item for item in before.fields}
+    assert by_name["test_secret.value"].by_key == {"old": 5}
     assert not before.rotation_complete
     assert before.unconfigured_in_use == []
 
@@ -236,7 +237,7 @@ async def test_status_and_reencrypt_move_everything_to_the_active_key(
     assert (results["test_secret.value"].reencrypted, results["test_secret.value"].failed) == (5, 0)
 
     after = await admin_keys.key_status(vault)
-    assert after.fields[0].by_key == {"new": 5}
+    assert {item.name: item for item in after.fields}["test_secret.value"].by_key == {"new": 5}
     assert after.rotation_complete
 
     again = await admin_keys.reencrypt(vault, batch_size=2)
