@@ -955,18 +955,15 @@ compute_server_addresses() {
   done
 }
 
-# print_record_table NAME: the DNS record to create, in a plain table. The values are this server's
-# own addresses, or a placeholder when they cannot be found. An AAAA row appears only when the server
-# has a public IPv6 address.
+# print_record_table NAME: the one DNS record to create (an A record), in a plain table. The value is
+# this server's own public IPv4 address, or a placeholder when it cannot be found.
 print_record_table() {
-  local name="$1" v4 v6 ttl="Auto (or 300)" w_name w_value rule placeholder
+  local name="$1" v4 ttl="Auto (or 300)" w_name w_value rule placeholder
   placeholder="<your server's public IP>"
   v4="${DNS_PUBLIC_V4:-$placeholder}"
-  v6="$DNS_PUBLIC_V6"
   w_name=${#name}
   if [ "$w_name" -lt 11 ]; then w_name=11; fi
   w_value=${#v4}
-  if [ "${#v6}" -gt "$w_value" ]; then w_value=${#v6}; fi
   if [ "$w_value" -lt 18 ]; then w_value=18; fi
   rule="$(printf '    +------+-%s-+-%s-+-%s-+' \
     "$(printf '%*s' "$w_name" '' | tr ' ' '-')" "$(printf '%*s' "$w_value" '' | tr ' ' '-')" \
@@ -975,9 +972,6 @@ print_record_table() {
   say "$(printf '    | Type | %-*s | %-*s | %-13s |' "$w_name" 'Name (host)' "$w_value" 'Value (points to)' 'TTL')"
   say "$rule"
   say "$(printf '    | A    | %-*s | %-*s | %-13s |' "$w_name" "$name" "$w_value" "$v4" "$ttl")"
-  if [ -n "$v6" ]; then
-    say "$(printf '    | AAAA | %-*s | %-*s | %-13s |' "$w_name" "$name" "$w_value" "$v6" "$ttl")"
-  fi
   say "$rule"
   if [ -z "$DNS_PUBLIC_V4" ]; then
     say "This server's own addresses are all private, which is common on cloud servers. Use the public IP"
@@ -1006,7 +1000,7 @@ print_dns_guidance() {
   say "Use a subdomain of a domain you already own, for example mcp.yourcompany.com, rather than the"
   say "main domain. Your main website keeps working untouched."
   say ""
-  say "At the company that manages your domain's DNS (often where you bought the domain), create this"
+  say "At the company that manages your domain's DNS (often where you bought the domain), create this one"
   say "record. The example uses the name mcp; use your own:"
   say ""
   print_record_table "mcp"
@@ -1034,8 +1028,8 @@ print_dns_instructions() {
   print_record_notes "$name" "$DOMAIN"
   if [ -n "$DNS_RESOLVED_V6" ]; then
     say ""
-    say "The name also has an IPv6 (AAAA) record that does not belong to this server. Remove it, or point it"
-    say "at this server's IPv6 address. Otherwise the certificate authority may try IPv6 and fail."
+    say "The name also has an IPv6 (AAAA) record that does not belong to this server. Delete it: only the"
+    say "A record is needed, and a wrong AAAA record stops the certificate from being issued."
   fi
   say ""
   say "DNS changes usually take a few minutes, sometimes up to an hour."

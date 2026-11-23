@@ -119,9 +119,41 @@ async def test_an_empty_list_tells_the_administrator_what_to_do(boss: Site) -> N
 # ---- adding ----
 
 
+async def test_the_add_page_asks_for_confirmation_before_the_credentials(
+    boss: Site, fake_auth: FakeGuestyAuth
+) -> None:
+    first = (await boss.client.get("/connections/add")).text
+    assert "Confirm it is you" in first
+    assert 'name="client_secret"' not in first
+    assert boss.secret is not None
+    confirmed = await boss.post(
+        "/connections/add",
+        {
+            "label": "",
+            "client_id": "",
+            "reauth": "1",
+            "password": PASSWORD,
+            "code": totp.code_for(boss.secret, totp.current_step() + 1),
+        },
+        page="/connections/add",
+    )
+    assert confirmed.status_code == 200
+    assert "Confirmed." in confirmed.text and 'name="client_secret"' in confirmed.text
+    assert "Enter the client secret" not in confirmed.text
+    assert "Confirm it is you" not in (await boss.client.get("/connections/add")).text
+    done = await boss.post(
+        "/connections/add",
+        {"label": "Main", "client_id": CLIENT_ID, "client_secret": CLIENT_SECRET},
+        page="/connections/add",
+    )
+    assert done.status_code == 303 and done.headers["location"] == "/connections?notice=added"
+    assert fake_auth.requests == 1
+
+
 async def test_the_add_form_explains_the_token_and_the_dedicated_key(boss: Site) -> None:
+    await boss.confirm(PASSWORD)
     page = (await boss.client.get("/connections/add")).text
-    assert "uses one of the key's 5 daily tokens" in page
+    assert "uses one of the key's daily tokens" in page
     assert "just for pmsbridge" in page and "only once" in page
     assert 'type="password"' in page
 

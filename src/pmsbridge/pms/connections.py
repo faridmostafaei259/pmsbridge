@@ -554,7 +554,11 @@ async def _credentials_post(request: Request, admin: CurrentUser, *, replacing: 
             replacing=target,
             label=label,
             client_id=client_id,
-            notice="Confirmed. Enter the client secret to finish." if just_confirmed else None,
+            notice=(
+                ("Confirmed. Enter the client secret to finish." if client_id else "Confirmed.")
+                if just_confirmed
+                else None
+            ),
             error=None if just_confirmed else "Enter the client secret.",
         )
     try:
@@ -617,8 +621,16 @@ def register_routes(app: FastAPI) -> None:
 
     @app.get("/connections/add", include_in_schema=False)
     async def add_form(request: Request, admin: Admin) -> Response:  # pyright: ignore[reportUnusedFunction]
-        del admin
-        return await _form_page(request)
+        # Confirm first, so the client ID and secret are typed only once.
+        stop = await _guard(
+            request,
+            admin,
+            {},
+            title="Add a Guesty connection",
+            fields={"label": "", "client_id": ""},
+            post_path="/connections/add",
+        )
+        return stop if stop is not None else await _form_page(request)
 
     @app.post("/connections/add", include_in_schema=False)
     async def add_submit(request: Request, admin: Admin) -> Response:  # pyright: ignore[reportUnusedFunction]
@@ -626,14 +638,21 @@ def register_routes(app: FastAPI) -> None:
 
     @app.get("/connections/rotate", include_in_schema=False)
     async def rotate_form(request: Request, admin: Admin, connection: str = "") -> Response:  # pyright: ignore[reportUnusedFunction]
-        del admin
         if not _ID.fullmatch(connection):
             raise PageError(404, "There is no such connection.")
         try:
             target = await find_connection(connection)
         except ActionRefusedError:
             raise PageError(404, "There is no such connection.") from None
-        return await _form_page(request, replacing=target)
+        stop = await _guard(
+            request,
+            admin,
+            {},
+            title=f"Replace the credentials of {target.label}",
+            fields={"connection_id": target.id, "client_id": ""},
+            post_path="/connections/rotate",
+        )
+        return stop if stop is not None else await _form_page(request, replacing=target)
 
     @app.post("/connections/rotate", include_in_schema=False)
     async def rotate_submit(request: Request, admin: Admin) -> Response:  # pyright: ignore[reportUnusedFunction]

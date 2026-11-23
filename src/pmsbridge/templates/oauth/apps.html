@@ -4,6 +4,7 @@
 <section class="card wide">
   <h1>Connected apps</h1>
   <p>These are the AI assistants you have approved. Each one acts as you, and can use only the PMS connections listed here.</p>
+  {% include "oauth/_connect_guide.html" %}
   {% if error %}
   <p class="error" role="alert">{{ error }}</p>
   {% endif %}

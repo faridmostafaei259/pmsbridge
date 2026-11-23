@@ -51,9 +51,8 @@ Things to know:
   your hosting provider (for example `server123.provider.net`). Then you create Type CNAME, Name `mcp`,
   Value `server123.provider.net` instead. **Never use a CNAME on your bare main domain** (`acme-stays.com`
   itself): DNS does not allow it next to your other records, and it can break your email.
-- **Add an AAAA record only if your server has a public IPv6 address.** It has the same Name and the server's
-  IPv6 address as its Value. If your name already has an AAAA record that points somewhere else, remove it or
-  point it at this server, otherwise the certificate may fail.
+- **One A record is all you need.** You do not need an AAAA (IPv6) record. If your name already has an AAAA
+  record that points somewhere else, delete it, otherwise the certificate may fail.
 - **Your server's public address** is shown in your hosting provider's control panel. On some cloud servers the
   server itself only knows a private address (it starts with `10.`, `172.16.` to `172.31.` or `192.168.`);
   the public address is still the one in the control panel. The installer shows your address when it can

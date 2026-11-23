@@ -18,7 +18,8 @@ https://<your-domain>/mcp
 ```
 
 For example, if you open pmsbridge at `https://pms.example.com`, the address is
-`https://pms.example.com/mcp`. Type it exactly like this, with `https://` and without a slash at the end.
+`https://pms.example.com/mcp`. You can also copy it from the **Connected apps** page (and, for
+administrators, the **Assistants** page), which shows these steps with your own address filled in. Type it exactly like this, with `https://` and without a slash at the end.
 
 Most AI assistants call your server from the internet, not from your own computer. That means:
 

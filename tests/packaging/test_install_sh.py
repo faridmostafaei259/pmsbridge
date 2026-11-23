@@ -615,10 +615,11 @@ def test_record_table_with_only_private_addresses_uses_a_placeholder(sandbox: Sa
     assert "address shown in your hosting provider's control panel" in out
 
 
-def test_record_table_adds_an_aaaa_row_only_for_a_public_ipv6_address(sandbox: Sandbox) -> None:
+def test_record_table_asks_for_one_a_record_even_with_public_ipv6(sandbox: Sandbox) -> None:
     out = table(sandbox, {"FAKE_LOCAL_ADDRS": "203.0.113.10 2001:db8::5"})
     assert "| A    | mcp         | 203.0.113.10       |" in out
-    assert "| AAAA | mcp         | 2001:db8::5        |" in out
+    assert "AAAA" not in out
+    assert out.count("+------+") == 3
 
 
 def test_record_table_ignores_private_loopback_and_link_local_ipv6(sandbox: Sandbox) -> None:
@@ -719,7 +720,8 @@ def test_step_six_reprints_the_filled_in_record_with_the_real_name(sandbox: Sand
     assert done.code == 0, done.text
     assert "The name app.shop.example.org points to: 198.51.100.7 2001:db8::99" in done.out
     assert "| A    | app         | 203.0.113.10       | Auto (or 300) |" in done.out
-    assert "| AAAA | app         | 2001:db8::5        | Auto (or 300) |" in done.out
+    assert "| AAAA |" not in done.out
+    assert "Delete it: only the" in done.out
     assert 'full name "app.shop.example.org"' in done.out
     assert "a few minutes, sometimes up to an hour" in done.out
 

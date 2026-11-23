@@ -38,6 +38,7 @@ from pmsbridge.accounts.pages import render
 from pmsbridge.accounts.users_page import guarded
 from pmsbridge.core.storage import session, write_transaction
 from pmsbridge.oauth import consent, grants
+from pmsbridge.oauth.config import mcp_resource
 from pmsbridge.oauth.db import OAuthClient, OAuthGrant
 from pmsbridge.oauth.redirects import redirect_host
 
@@ -193,6 +194,7 @@ async def _my_page(
         connections=choices,
         notice=NOTICES.get(notice),
         error=error,
+        mcp_url=mcp_resource(),
     )
 
 
@@ -205,6 +207,7 @@ async def _admin_page(request: Request, *, notice: str = "") -> Response:
         truncated=truncated,
         max_listed=MAX_LISTED,
         notice=NOTICES.get(notice),
+        mcp_url=mcp_resource(),
     )
 
 

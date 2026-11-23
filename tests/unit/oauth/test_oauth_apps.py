@@ -70,6 +70,15 @@ async def test_an_empty_page_says_so(browser: httpx.AsyncClient) -> None:
     assert "You have not approved any assistants" in page.text
 
 
+async def test_the_page_shows_how_to_connect_with_the_server_address(
+    browser: httpx.AsyncClient,
+) -> None:
+    page = (await browser.get("/account/apps")).text
+    assert "Connect an AI assistant" in page
+    assert f"<code>{BASE_URL}/mcp</code>" in page
+    assert "custom connector" in page and "Allow access" in page
+
+
 async def test_the_page_lists_an_assistant_once_with_its_details(
     browser: httpx.AsyncClient, api: httpx.AsyncClient
 ) -> None:

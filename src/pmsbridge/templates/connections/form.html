@@ -9,8 +9,8 @@
   {% if notice %}
   <p class="notice" role="status">{{ notice }}</p>
   {% endif %}
-  <p>In Guesty, create an API key just for pmsbridge. Do not reuse a key that other tools use: Guesty allows only 5 new access tokens per 24 hours for each key, and everything that shares the key shares that limit. Guesty shows the client secret only once, so copy it when you create the key.</p>
-  <p class="warning">Checking the credentials uses one of the key's 5 daily tokens. pmsbridge keeps that token, so it is not wasted. The secret is stored encrypted and is never shown again.</p>
+  <p>In Guesty, create an API key just for pmsbridge. Do not reuse a key that other tools use: Guesty allows only a few new access tokens per 24 hours for each key (usually 5), and everything that shares the key shares that limit. Guesty shows the client secret only once, so copy it when you create the key.</p>
+  <p class="warning">Checking the credentials uses one of the key's daily tokens. pmsbridge keeps that token, so it is not wasted. The secret is stored encrypted and is never shown again.</p>
   <form method="post" action="{{ '/connections/rotate' if replacing else '/connections/add' }}" autocomplete="off">
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
     {% if replacing %}

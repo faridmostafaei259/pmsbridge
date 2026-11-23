@@ -493,6 +493,7 @@ async def test_an_administrator_cancels_an_assistant_after_confirming_identity(
     mine = await access_token(staff, client_id)
     listing = await admin.get("/admin/assistants")
     assert listing.status_code == 200 and STAFF[0] in listing.text
+    assert "Connect an AI assistant" in listing.text and "/mcp</code>" in listing.text
     token = CSRF_FIELD.search(listing.text)
     assert token
     data = {

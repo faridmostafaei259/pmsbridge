@@ -16,8 +16,8 @@ installation with the `docker compose` commands on this page. Nothing here is ba
 - A Linux server with Docker and the Docker Compose plugin installed. Check with `docker --version` and
   `docker compose version`. If your account is not allowed to run Docker, put `sudo` in front of every
   `docker` command on this page.
-- A domain name, such as `mcp.example.com`, with a DNS `A` record (and an `AAAA` record if the server has
-  an IPv6 address) that points at the server's public address. Check from any computer with
+- A domain name, such as `mcp.example.com`, with a DNS `A` record that points at the server's public
+  address. Check from any computer with
   `nslookup mcp.example.com`.
 - Ports 80 and 443 open to the internet, in the server's firewall and in any cloud firewall. Port 80 is
   needed to get the certificate.
