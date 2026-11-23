@@ -1,0 +1,25 @@
+{
+  "results": [
+    {
+      "_id": "6a3000000000000000000a01",
+      "firstName": "Alex",
+      "lastName": "Invented",
+      "fullName": "Alex Invented",
+      "email": "alex.invented@example.test",
+      "phone": "+15550100",
+      "preferredLanguage": ["fr", "en"],
+      "returningGuest": true,
+      "passportNumber": "PASS-FAKE-777",
+      "notes": "Staff-only note: invented attention text."
+    },
+    {
+      "_id": "6a3000000000000000000a02",
+      "fullName": "Sam Madeup",
+      "guestEmail": "sam.madeup@example.test",
+      "guestPhone": "+15550200",
+      "returningGuest": false
+    },
+    {"_id": "6a3000000000000000000a03"}
+  ],
+  "total": 7
+}

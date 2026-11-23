@@ -88,6 +88,7 @@ Each feature has its own page with the Guesty endpoints it calls and how their d
 - [Listings, listing details and photos](listings.md)
 - [Reservations](reservations.md)
 - [Calendar and prices](calendar.md)
+- [Guests](guests.md)
 
 pmsbridge itself also calls these, for every feature:
 

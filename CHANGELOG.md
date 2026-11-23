@@ -58,6 +58,7 @@ All notable changes to this project are documented here. The format follows
 - Each AI assistant approval is limited to 60 tool calls a minute, of which 10 may change data. An assistant over the limit is told how many seconds to wait.
 - Calendar and price tools for Guesty: `get_calendar` (day-by-day availability, prices and minimum stays) and `get_pricing_settings` (base and weekend price, fees, discounts, stay limits).
 - `update_calendar`, the first tool that changes data: sets prices, minimum stays or availability for up to 31 date ranges, only on connections where an administrator allowed changes. It sends nothing when a range starts before yesterday, the calendar cannot be checked completely, a price is in the wrong currency or far from the listing's base price or a day's current price, or availability would change on a booked or multi-unit day. If a later range fails, it reports exactly which ranges were applied. Changes are never repeated automatically.
+- Guesty guest tools: `list_guests` and `get_guest` read a guest's name, email, phone and language. Identity documents, birthdays, addresses, staff notes and payment methods are never read. Guesty cannot search guests by text, so a search gets a clear message and sends nothing to Guesty.
 
 ### Changed
 - A connection name that matches several allowed connections only by upper or lower case gets a clear message listing them.

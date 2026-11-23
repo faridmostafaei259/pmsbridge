@@ -17,6 +17,7 @@ nav:
           - Listings: providers/guesty/listings.md
           - Reservations: providers/guesty/reservations.md
           - Calendar and prices: providers/guesty/calendar.md
+          - Guests: providers/guesty/guests.md
   - Configuration: configuration.md
   - Architecture: architecture.md
   - Security model: security/threat-model.md

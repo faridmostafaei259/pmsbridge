@@ -32,6 +32,19 @@ Returns one entry per day from start to end, both included, at most 366 days. Ea
 | `end` | string | yes | Last day (included), a date written YYYY-MM-DD. |
 | `connection` | string (optional) | no | The connection to use: its name or id as shown by list_connections. Optional when only one connection is available. |
 
+## `get_guest`
+
+**Read only.**
+
+Get one guest by id: name, email, phone and preferred language.
+
+Identity documents, birthdays, addresses and staff notes are never shown. Fails with a clear message if the guest does not exist.
+
+| Argument | Type | Required | Description |
+|---|---|---|---|
+| `guest_id` | string | yes | The guest id, for example from list_guests or a reservation. |
+| `connection` | string (optional) | no | The connection to use: its name or id as shown by list_connections. Optional when only one connection is available. |
+
 ## `get_listing`
 
 **Read only.**
@@ -93,6 +106,21 @@ List the property management connections this AI assistant may use.
 Call this first when you do not know which connection to use. Every other tool takes an optional `connection` argument (a label or id from this list); it can be left out when exactly one connection is available. Only connections the person allowed for this assistant are shown.
 
 This tool takes no arguments.
+
+## `list_guests`
+
+**Read only.**
+
+List the guests in the property management system.
+
+Returns a page of guests with name, email, phone and language. Searching guests by name or email depends on the system; the reliable way to reach the guest of a booking is get_reservation. When next_cursor is set there are more; pass it back as cursor.
+
+| Argument | Type | Required | Description |
+|---|---|---|---|
+| `search` | string (optional) | no | A guest name or email to look for. Not every property management system can search guests; if it cannot, the tool says so. Omit for all. |
+| `limit` | integer (optional) | no | How many guests to return (1 to 100). |
+| `cursor` | string (optional) | no | The next_cursor of the previous result, to get the next page. |
+| `connection` | string (optional) | no | The connection to use: its name or id as shown by list_connections. Optional when only one connection is available. |
 
 ## `list_listing_photos`
 
