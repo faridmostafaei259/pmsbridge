@@ -148,6 +148,12 @@ class Settings(BaseSettings):
         le=100,
         description="How many automatic pre-upgrade backups to keep. Older ones are deleted.",
     )
+    audit_retention_days: int = Field(
+        default=90,
+        ge=7,
+        le=3650,
+        description="Keep the record of what AI assistants did for this many days, then delete it.",
+    )
     guesty_token_refresh_minutes: int = Field(
         default=45,
         ge=30,
